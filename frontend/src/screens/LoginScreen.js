@@ -30,7 +30,14 @@ export default function LoginScreen({ navigation }) {
         keyboardType="email-address"
         autoCapitalize="none"
       />
-      {/* ...your password input and other buttons... */}
+      <TextInput
+        placeholder="Password"
+        placeholderTextColor="#9aa4b2"
+        value={password}
+        onChangeText={setPassword}
+        style={{ backgroundColor: "#0724", color: "#fff", padding: 15, borderRadius: 12, marginBottom: 12 }}
+        secureTextEntry
+      />
       <TouchableOpacity onPress={handleLogin} style={{ backgroundColor: "#00e6a8", padding: 15, borderRadius: 12, alignItems: "center" }}>
         <Text style={{ fontWeight: "700", fontSize: 16 }}>Login</Text>
       </TouchableOpacity>

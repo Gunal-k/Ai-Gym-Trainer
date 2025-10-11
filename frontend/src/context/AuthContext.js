@@ -17,14 +17,22 @@ export const AuthProvider = ({ children }) => {
         password,
       });
       
-      const token = response.data.access_token; // Corrected line
+      // Check if response.data exists before trying to access it
+      if (response && response.data) {
+        const token = response.data.access_token;
 
-      if (token) {
-        setUserToken(token);
-        await AsyncStorage.setItem('userToken', token);
+        if (token) {
+          setUserToken(token);
+          await AsyncStorage.setItem('userToken', token);
+        } else {
+          // This will be caught by the catch block below
+          throw new Error("Token not found in server response");
+        }
       } else {
-        throw new Error("Token not received from server");
+        // This will also be caught
+        throw new Error("Empty response from server");
       }
+
     } catch (e) {
       console.log(`Login error: ${e}`);
       Alert.alert("Login Failed", "Invalid email or password.");

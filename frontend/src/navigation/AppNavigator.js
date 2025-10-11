@@ -1,6 +1,5 @@
 import React, { useContext } from 'react';
 import { View, ActivityIndicator } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { AuthContext } from '../context/AuthContext';
 
@@ -31,9 +30,6 @@ export default function AppNavigator() {
     );
   }
 
-  return (
-    <NavigationContainer>
-      {userToken !== null ? <MainTabNavigator /> : <AuthStack />}
-    </NavigationContainer>
-  );
+  // Return the correct navigator directly
+  return userToken !== null ? <MainTabNavigator /> : <AuthStack />;
 }
