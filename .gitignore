@@ -1,0 +1,21 @@
+# Examples: ignore a folder that is inside another folder
+
+# # 1) Ignore the folder "secret" directly inside the repository root's "backend" folder
+# /backend/secret/
+
+# # 2) Ignore any "temp" folder anywhere under "src" (any depth)
+# src/**/temp/
+
+# # 3) Ignore any "cache" folder anywhere under "services"
+# /services/**/cache/
+
+# 4) Ignore a specific nested path exactly (root-anchored)
+#/frontend/build/cache/   <-- uncomment and edit if needed
+
+# 5) Ignore folder name regardless of location (all node_modules)
+**/node_modules/
+**/venv/
+**/.expo/
+
+# 6) Unignore a specific folder if a broader rule matched it
+#!/backend/secret/keepme/
