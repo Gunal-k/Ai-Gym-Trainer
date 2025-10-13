@@ -59,7 +59,7 @@ const RegisterScreen = ({ navigation }) => {
         weight: '', // Default empty value
         gender: '', // Default empty value
         goal: '', // Default empty value
-        profilePic: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=1964&auto=format&fit=crop', // Default profile picture
+        profilePic: '../assets/profile.png', // Default profile picture
         createdAt: new Date(), // Timestamp of creation
       });
       console.log('User profile created in Firestore');
