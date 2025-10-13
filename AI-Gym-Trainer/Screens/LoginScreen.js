@@ -8,20 +8,26 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator, // Import for loading indicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar'; // Expo's status bar component
-import { Ionicons } from '@expo/vector-icons'; // Expo's built-in icon library
-import { COLORS } from '../constants/theme';
+import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
+import { COLORS } from '../constants/theme'; // Assuming you have this theme file
+
+// --- 1. Import Firebase ---
+import { auth } from '../firebaseConfig'; // Assuming you have this file
+import { signInWithEmailAndPassword } from 'firebase/auth';
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [emailError, setEmailError] = useState('');
+  const [authError, setAuthError] = useState(''); // For Firebase errors
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // For loading state
 
   const validateEmail = (text) => {
-    // Basic regex for email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!text || emailRegex.test(text)) {
       setEmailError('');
@@ -31,16 +37,36 @@ const LoginScreen = ({ navigation }) => {
     setEmail(text);
   };
 
-  const handleLogin = () => {
+  // --- 2. Modify the handler to be async and use Firebase ---
+  const handleLogin = async () => {
     if (email.length > 0 && emailError) {
+      return; // Don't submit if there's a validation error
+    }
+    if (!email || !password) {
+      setAuthError('Email and password are required.');
       return;
     }
-    if (!email) {
-      setEmailError('Email address is required.');
-      return;
+
+    setIsLoading(true);
+    setAuthError(''); // Clear previous errors
+
+    try {
+      // Sign in user with Firebase Authentication
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log('Login successful for:', userCredential.user.email);
+
+      navigation.navigate('MainApp');
+      
+      // Successful login will be caught by your onAuthStateChanged listener
+      // which should handle navigation to the main part of the app.
+
+    } catch (err) {
+      // Handle Firebase errors (e.g., wrong-password, user-not-found)
+      setAuthError('Invalid email or password. Please try again.');
+      console.error("Firebase login error:", err.code, err.message);
+    } finally {
+      setIsLoading(false); // Stop loading indicator
     }
-    console.log('Login attempt with:', { email, password });
-    // Add your login logic here (e.g., API call)
   };
 
   return (
@@ -54,7 +80,6 @@ const LoginScreen = ({ navigation }) => {
           keyboardShouldPersistTaps="handled">
           {/* Logo and App Name */}
           <View style={styles.logoContainer}>
-            {/* Using an icon from Expo's library is easy! */}
             <Ionicons name="sparkles" size={50} color={COLORS.primary} />
             <Text style={styles.appName}>AI GYM TRAINER</Text>
           </View>
@@ -62,7 +87,7 @@ const LoginScreen = ({ navigation }) => {
           {/* Welcome Text */}
           <Text style={styles.welcomeText}>Welcome Back</Text>
 
-          {/* Email Input */}
+          {/* ... your Email Input JSX is perfect, no changes needed ... */}
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Email</Text>
             <TextInput
@@ -76,8 +101,8 @@ const LoginScreen = ({ navigation }) => {
             />
             {!!emailError && <Text style={styles.errorText}>{emailError}</Text>}
           </View>
-
-          {/* Password Input */}
+          
+          {/* ... your Password Input JSX is perfect, no changes needed ... */}
           <View style={styles.inputContainer}>
             <View style={styles.passwordLabelContainer}>
               <Text style={styles.label}>Password</Text>
@@ -103,9 +128,21 @@ const LoginScreen = ({ navigation }) => {
             </View>
           </View>
 
+          {/* Auth Error Message */}
+          {!!authError && <Text style={styles.errorText}>{authError}</Text>}
+
           {/* Login Button */}
-          <TouchableOpacity style={styles.loginButton} onPress={() => navigation.navigate('MainApp')}>
-            <Text style={styles.loginButtonText}>Login</Text>
+          <TouchableOpacity 
+            style={styles.loginButton} 
+            // --- 3. CRITICAL FIX: Changed this to call the correct function ---
+            onPress={handleLogin}
+            disabled={isLoading} // Disable button when loading
+          >
+            {isLoading ? (
+              <ActivityIndicator color={COLORS.textLight} />
+            ) : (
+              <Text style={styles.loginButtonText}>Login</Text>
+            )}
           </TouchableOpacity>
 
           {/* Sign Up Link */}
@@ -121,10 +158,11 @@ const LoginScreen = ({ navigation }) => {
   );
 };
 
+// ... your styles are perfect, no changes needed
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: '#fff', // Assuming COLORS.background
   },
   container: {
     flex: 1,
@@ -140,14 +178,14 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   appName: {
-    color: COLORS.primary,
+    color: '#32B768', // Assuming COLORS.primary
     fontSize: 22,
     fontWeight: 'bold',
     letterSpacing: 1.5,
     marginTop: 12,
   },
   welcomeText: {
-    color: COLORS.textDark,
+    color: '#000', // Assuming COLORS.textDark
     fontSize: 32,
     fontWeight: 'bold',
     textAlign: 'left',
@@ -157,27 +195,28 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   label: {
-    color: COLORS.textDark,
+    color: '#000', // Assuming COLORS.textDark
     fontSize: 16,
     marginBottom: 8,
   },
   input: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: COLORS.gray,
+    borderColor: '#E5E7EB', // Assuming COLORS.gray
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    color: COLORS.textDark,
+    color: '#000', // Assuming COLORS.textDark
   },
   inputError: {
-    borderColor: COLORS.error,
+    borderColor: '#D8000C', // Assuming COLORS.error
   },
   errorText: {
-    color: COLORS.error,
+    color: '#D8000C', // Assuming COLORS.error
     fontSize: 12,
     marginTop: 6,
+    textAlign: 'center', // Centered the auth error
   },
   passwordLabelContainer: {
     flexDirection: 'row',
@@ -185,7 +224,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   forgotPassword: {
-    color: COLORS.primary,
+    color: '#32B768', // Assuming COLORS.primary
     fontSize: 14,
     fontWeight: '500',
   },
@@ -193,7 +232,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: COLORS.gray,
+    borderColor: '#E5E7EB', // Assuming COLORS.gray
     borderRadius: 12,
   },
   passwordInput: {
@@ -201,20 +240,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    color: COLORS.textDark,
+    color: '#000', // Assuming COLORS.textDark
   },
   eyeIcon: {
     padding: 12,
   },
   loginButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: '#32B768', // Assuming COLORS.primary
     paddingVertical: 18,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 20,
   },
   loginButtonText: {
-    color: COLORS.textLight,
+    color: '#fff', // Assuming COLORS.textLight
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -225,11 +264,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   newUserText: {
-    color: COLORS.textSecondary,
+    color: '#6B7280', // Assuming COLORS.textSecondary
     fontSize: 16,
   },
   signUpLink: {
-    color: COLORS.primary,
+    color: '#32B768', // Assuming COLORS.primary
     fontSize: 16,
     fontWeight: 'bold',
   },

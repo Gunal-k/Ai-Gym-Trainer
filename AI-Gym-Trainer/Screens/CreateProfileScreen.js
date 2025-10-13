@@ -251,6 +251,7 @@ const styles = StyleSheet.create({
   unitText: {
     fontSize: 16,
     color: COLORS.textSecondary,
+    padding: 10,
   },
   pickerText: {
     flex: 1,

@@ -8,12 +8,18 @@ import {
   ScrollView,
   TextInput,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect } from '@react-navigation/native';
+
+import { signOut } from "firebase/auth";
+import { auth, db } from '../firebaseConfig';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
 const GENDERS = ['Male', 'Female', 'Other', 'Prefer not to say'];
 const GOALS = [
@@ -26,31 +32,66 @@ const GOALS = [
 ];
 
 // This component will manage both viewing and editing states.
-const ProfileScreen = () => {
+const ProfileScreen = ({navigation}) => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
   const [modalContent, setModalContent] = useState({ type: '', options: [] });
+  const [isLoading, setIsLoading] = useState(true);
 
-  // State for user data. Initialize with some mock data.
-  const [profile, setProfile] = useState({
-    name: 'Sophia Rodriguez',
-    email: 'sophia.rodriguez@example.com',
-    height: '168',
-    weight: '62',
-    gender: 'Female',
-    goal: 'Build lean muscle mass',
-    profilePic: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=1964&auto=format&fit=crop',
-  });
+  // State for user data. Initialize with null.
+  const [profile, setProfile] = useState(null);
+
+  // Fetch profile data when the screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      const fetchProfileData = async () => {
+        setIsLoading(true);
+        const user = auth.currentUser;
+        if (user) {
+          const docRef = doc(db, 'users', user.uid);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            setProfile(docSnap.data());
+          } else {
+            console.log('No such document!');
+          }
+        }
+        setIsLoading(false);
+      };
+
+      fetchProfileData();
+    }, [])
+  );
 
   // Handler to update profile state
   const handleInputChange = (field, value) => {
     setProfile(prev => ({ ...prev, [field]: value }));
   };
   
-  const handleSaveChanges = () => {
-    // In a real app, you would save the data to a backend here.
-    console.log('Saving changes:', profile);
-    setIsEditMode(false);
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      navigation.navigate('Login');
+      console.log("User signed out successfully!");
+      // The navigation to the Login screen will be handled by a global
+      // auth state listener, which is the recommended approach.
+    } catch (error) {
+      console.error("Sign out error:", error);
+    }
+  };
+
+  const handleSaveChanges = async () => {
+    const user = auth.currentUser;
+    if (user && profile) {
+      try {
+        const docRef = doc(db, 'users', user.uid);
+        await updateDoc(docRef, profile);
+        console.log('Profile updated successfully!');
+        setIsEditMode(false);
+      } catch (error) {
+        console.error("Error updating profile: ", error);
+      }
+    }
   };
   
   const openPickerModal = (type, options) => {
@@ -120,6 +161,14 @@ const ProfileScreen = () => {
       </View>
   );
 
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </SafeAreaView>
+    );
+  }
+
 
   const renderViewMode = () => (
     <>
@@ -145,8 +194,8 @@ const ProfileScreen = () => {
         <Text style={styles.goalText}>{profile.goal}</Text>
       </View>
 
-      <TouchableOpacity style={styles.actionButton} onPress={() => setIsEditMode(true)}>
-        <Text style={styles.actionButtonText}>Edit</Text>
+      <TouchableOpacity style={styles.actionButton} onPress={handleSignOut}>
+        <Text style={styles.actionButtonText}>Log Out</Text>
       </TouchableOpacity>
     </>
   );
@@ -192,7 +241,7 @@ const ProfileScreen = () => {
       {/* Custom Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>My Profile</Text> 
-        {isEditMode ? (<TouchableOpacity onPress={() => setIsEditMode(false)}><Text style={{color: COLORS.primary}}>Cancel</Text></TouchableOpacity>) : (<TouchableOpacity onPress={() => setIsEditMode(true)}><Ionicons name="create-outline" size={24} color={COLORS.textDark} /></TouchableOpacity>)}
+        {isEditMode ? (<TouchableOpacity onPress={() => setIsEditMode(false)}><Text style={{color: COLORS.primary, padding:10}}>Cancel</Text></TouchableOpacity>) : (<TouchableOpacity onPress={() => setIsEditMode(true)}><Ionicons name="create-outline" size={24} color={COLORS.textDark} /></TouchableOpacity>)}
       </View>
       
       <ScrollView contentContainerStyle={styles.scrollContainer}>
@@ -230,7 +279,7 @@ const ProfileScreen = () => {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.background },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: COLORS.card, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 10, backgroundColor: COLORS.card, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   headerTitle: { fontSize: 22, fontWeight: 'bold', color: COLORS.textDark },
   scrollContainer: { padding: 20, paddingBottom: 100 },
   card: { backgroundColor: COLORS.card, borderRadius: 16, padding: 20, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 3 },
@@ -262,9 +311,9 @@ const styles = StyleSheet.create({
   inputLabel: { fontSize: 14, color: COLORS.textSecondary, marginBottom: 8 },
   inputContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, paddingHorizontal: 16 },
   input: { flex: 1, paddingVertical: 14, fontSize: 16, color: COLORS.textDark },
-  inputUnit: { fontSize: 16, color: COLORS.textSecondary },
+  inputUnit: { fontSize: 16, color: COLORS.textSecondary, padding: 10},
   pickerContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 14 },
-  pickerText: { fontSize: 16, color: COLORS.textDark },
+  pickerText: { fontSize: 16, color: COLORS.textDark, padding: 10},
 
   // Action Button
   actionButton: { backgroundColor: COLORS.secondaryGreen, padding: 18, borderRadius: 28, alignItems: 'center', marginTop: 10 },

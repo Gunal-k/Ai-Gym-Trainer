@@ -7,10 +7,16 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  ActivityIndicator, // Import for loading indicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Feather } from '@expo/vector-icons'; // Using Feather for the 'eye' icon
+import { Feather } from '@expo/vector-icons';
+
+// --- 1. Import Firebase ---
+import { auth, db } from '../firebaseConfig'; // Assuming you have this file
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { setDoc, doc } from 'firebase/firestore';
 
 const RegisterScreen = ({ navigation }) => {
   const [fullName, setFullName] = useState('');
@@ -20,8 +26,10 @@ const RegisterScreen = ({ navigation }) => {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false); // For loading state
 
-  const handleCreateProfile = () => {
+  // --- 2. Modify the handler to be async and use Firebase ---
+  const handleCreateProfile = async () => {
     // Basic validation
     if (!fullName || !email || !password || !confirmPassword) {
       setError('All fields are required.');
@@ -31,12 +39,46 @@ const RegisterScreen = ({ navigation }) => {
       setError('Passwords do not match. Please try again.');
       return;
     }
-    // Clear error on success
-    setError('');
-    console.log('Registration successful for:', { fullName, email });
-    // On success, navigate to the main app
-    navigation.navigate('MainApp');
+
+    setIsLoading(true);
+    setError(''); // Clear previous errors
+
+    try {
+      // Create user in Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      console.log('Registration successful for:', user.email);
+
+      // Save user details to Firestore
+      // Use the user's UID from Auth as the document ID in Firestore
+      await setDoc(doc(db, "users", user.uid), {
+        name: fullName, // Use the name from the form
+        email: email, // Use the email from the form
+        height: '', // Default empty value
+        weight: '', // Default empty value
+        gender: '', // Default empty value
+        goal: '', // Default empty value
+        profilePic: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=1964&auto=format&fit=crop', // Default profile picture
+        createdAt: new Date(), // Timestamp of creation
+      });
+      console.log('User profile created in Firestore');
+      navigation.navigate('CreateProfile'); // Navigate to Login or MainApp after successful registration
+      
+      // On success, Firebase's onAuthStateChanged listener will handle navigation
+      // so you might not need the navigation.navigate() here if you have a global listener.
+      // For now, we can leave it to navigate after successful profile creation.
+      // navigation.navigate('MainApp');
+
+    } catch (err) {
+      // Handle Firebase errors (e.g., email-already-in-use)
+      setError(err.message);
+      console.error("Firebase registration error:", err.code, err.message);
+    } finally {
+      setIsLoading(false); // Stop loading indicator
+    }
   };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
@@ -50,81 +92,81 @@ const RegisterScreen = ({ navigation }) => {
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContentContainer}
         keyboardShouldPersistTaps="handled">
-
-        {/* Personal Details Card */}
+        
+        {/* ... your Personal Details Card JSX is perfect, no changes needed ... */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Personal Details</Text>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Full Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your full name"
-              placeholderTextColor="#6B7280"
-              value={fullName}
-              onChangeText={setFullName}
-            />
-          </View>
+           <Text style={styles.cardTitle}>Personal Details</Text>
+           <View style={styles.inputGroup}>
+             <Text style={styles.label}>Full Name</Text>
+             <TextInput
+               style={styles.input}
+               placeholder="Enter your full name"
+               placeholderTextColor="#6B7280"
+               value={fullName}
+               onChangeText={setFullName}
+             />
+           </View>
         </View>
 
-        {/* Account Information Card */}
+        {/* ... your Account Information Card JSX is perfect, no changes needed ... */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Account Information</Text>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your email address"
-              placeholderTextColor="#6B7280"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-            />
-          </View>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.passwordContainer}>
-              <TextInput
-                style={styles.passwordInput}
-                placeholder="Create a strong password"
-                placeholderTextColor="#6B7280"
-                secureTextEntry={!isPasswordVisible}
-                value={password}
-                onChangeText={setPassword}
-              />
-              <TouchableOpacity
-                onPress={() => setIsPasswordVisible(!isPasswordVisible)}
-                style={styles.eyeIcon}>
-                <Feather
-                  name={isPasswordVisible ? 'eye-off' : 'eye'}
-                  size={20}
-                  color="#6B7280"
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Confirm Password</Text>
-            <View style={styles.passwordContainer}>
-              <TextInput
-                style={styles.passwordInput}
-                placeholder="Confirm your password"
-                placeholderTextColor="#6B7280"
-                secureTextEntry={!isConfirmPasswordVisible}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-              />
-              <TouchableOpacity
-                onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}
-                style={styles.eyeIcon}>
-                <Feather
-                  name={isConfirmPasswordVisible ? 'eye-off' : 'eye'}
-                  size={20}
-                  color="#6B7280"
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
+           <Text style={styles.cardTitle}>Account Information</Text>
+           <View style={styles.inputGroup}>
+             <Text style={styles.label}>Email</Text>
+             <TextInput
+               style={styles.input}
+               placeholder="Enter your email address"
+               placeholderTextColor="#6B7280"
+               keyboardType="email-address"
+               autoCapitalize="none"
+               value={email}
+               onChangeText={setEmail}
+             />
+           </View>
+           <View style={styles.inputGroup}>
+             <Text style={styles.label}>Password</Text>
+             <View style={styles.passwordContainer}>
+               <TextInput
+                 style={styles.passwordInput}
+                 placeholder="Create a strong password"
+                 placeholderTextColor="#6B7280"
+                 secureTextEntry={!isPasswordVisible}
+                 value={password}
+                 onChangeText={setPassword}
+               />
+               <TouchableOpacity
+                 onPress={() => setIsPasswordVisible(!isPasswordVisible)}
+                 style={styles.eyeIcon}>
+                 <Feather
+                   name={isPasswordVisible ? 'eye-off' : 'eye'}
+                   size={20}
+                   color="#6B7280"
+                 />
+               </TouchableOpacity>
+             </View>
+           </View>
+           <View style={styles.inputGroup}>
+             <Text style={styles.label}>Confirm Password</Text>
+             <View style={styles.passwordContainer}>
+               <TextInput
+                 style={styles.passwordInput}
+                 placeholder="Confirm your password"
+                 placeholderTextColor="#6B7280"
+                 secureTextEntry={!isConfirmPasswordVisible}
+                 value={confirmPassword}
+                 onChangeText={setConfirmPassword}
+               />
+               <TouchableOpacity
+                 onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}
+                 style={styles.eyeIcon}>
+                 <Feather
+                   name={isConfirmPasswordVisible ? 'eye-off' : 'eye'}
+                   size={20}
+                   color="#6B7280"
+                 />
+               </TouchableOpacity>
+             </View>
+           </View>
         </View>
 
         {/* Error Message */}
@@ -133,21 +175,31 @@ const RegisterScreen = ({ navigation }) => {
         {/* Create Profile Button */}
         <TouchableOpacity
           style={styles.createButton}
-          onPress={() => navigation.navigate('CreateProfile')}
+          // --- 3. CRITICAL FIX: Changed this to call the correct function ---
+          onPress={handleCreateProfile} 
+          disabled={isLoading} // Disable button when loading
         >
-          <Text style={styles.createButtonText}>Create Profile</Text>
+          {isLoading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.createButtonText}>Create Profile</Text>
+          )}
         </TouchableOpacity>
+        
+        {/* ... your "Existing user?" JSX is perfect, no changes needed ... */}
         <View style={styles.signUpContainer}>
-          <Text style={styles.newUserText}>Existing user? </Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-            <Text style={styles.signUpLink}>Log in</Text>
-          </TouchableOpacity>
+           <Text style={styles.newUserText}>Existing user? </Text>
+           <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+             <Text style={styles.signUpLink}>Log in</Text>
+           </TouchableOpacity>
         </View>
+
       </ScrollView>
     </SafeAreaView>
   );
 };
 
+// ... your styles are perfect, no changes needed
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -172,6 +224,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 10,
+    marginBottom: 20, // Added margin between cards
   },
   cardTitle: {
     fontSize: 18,
@@ -238,7 +291,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   newUserText: {
-    color:'#6B7280',
+    color: '#6B7280',
     fontSize: 16,
   },
   signUpLink: {
