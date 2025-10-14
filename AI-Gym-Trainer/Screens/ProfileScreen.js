@@ -46,30 +46,76 @@ const ProfileScreen = ({ navigation }) => {
   // Fetch profile data when the screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      let isActive = true;
+      let isActive = true; // Prevents state updates on unmounted component
+
       const fetchProfileData = async () => {
         setIsLoading(true);
-        const user = auth.currentUser;
-        if (user) {
-          const docRef = doc(db, 'users', user.uid);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists() && isActive) {
-            setProfile(docSnap.data());
-          } else if (isActive) {
-            setProfile({
-              name: user.displayName || 'New User',
-              email: user.email,
-              height: '', weight: '', gender: '', goal: '',
-              profilePic: user.photoURL || '',
-            });
+        try {
+          const user = auth.currentUser;
+          if (user && isActive) {
+            const docRef = doc(db, 'users', user.uid);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+              setProfile(docSnap.data());
+            } else {
+              const defaultProfile = {
+                name: user.displayName || 'New User',
+                email: user.email,
+                height: '', weight: '', gender: '', goal: '',
+                profilePic: user.photoURL || '',
+              };
+              setProfile(defaultProfile);
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching profile:", error);
+          // Optionally, set an error state here to show a message to the user
+        } finally {
+          // This block ALWAYS runs, whether the fetch succeeds or fails.
+          if (isActive) {
+            setIsLoading(false);
           }
         }
-        if (isActive) setIsLoading(false);
       };
+
       fetchProfileData();
-      return () => { isActive = false; };
+
+      return () => {
+        isActive = false; // Cleanup function
+      };
     }, [])
   );
+
+  const uploadImageToCloudinary = async (uri) => {
+    const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
+    const uploadPreset = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+    
+    const formData = new FormData();
+    formData.append('file', {
+      uri: uri,
+      type: `image/jpeg`, // Or use a library to detect mimetype
+      name: `profile-pic.jpg`,
+    });
+    formData.append('upload_preset', uploadPreset);
+
+    const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
+
+    try {
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+      if (data.secure_url) {
+        return data.secure_url;
+      } else {
+        throw new Error('Upload failed: ' + (data.error ? data.error.message : 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Cloudinary upload error:', error);
+      throw error;
+    }
+  };
 
   const handleInputChange = (field, value) => {
     setProfile(prev => ({ ...prev, [field]: value }));
@@ -95,18 +141,18 @@ const ProfileScreen = ({ navigation }) => {
         handleInputChange('profilePic', result.assets[0].uri);
       }
     } catch (error) {
-  console.error("Error saving profile:", error);
+      console.error("Error saving profile:", error);
 
-  // Log full error payload if available
-  if (error.customData) {
-    console.error("Error customData:", error.customData);
-  }
-  if (error.customData && error.customData.serverResponse) {
-    console.error("Server response:", error.customData.serverResponse);
-  }
+      // Log full error payload if available
+      if (error.customData) {
+        console.error("Error customData:", error.customData);
+      }
+      if (error.customData && error.customData.serverResponse) {
+        console.error("Server response:", error.customData.serverResponse);
+      }
 
-  Alert.alert("Error", "Could not save your changes. Please try again.");
-}
+      Alert.alert("Error", "Could not save your changes. Please try again.");
+    }
   };
 
   const handleSaveChanges = async () => {
@@ -120,33 +166,19 @@ const ProfileScreen = ({ navigation }) => {
     let dataToSave = { ...profile };
 
     try {
-      // --- THIS IS THE KEY PART FOR THE PHOTO UPDATE ---
-
-      // 1. Check if a NEW image was picked (the URI will start with 'file://')
+      // Check if a NEW image was picked (the URI will start with 'file://')
       if (profile.profilePic && profile.profilePic.startsWith('file://')) {
-        const response = await fetch(profile.profilePic);
-        const blob = await response.blob();
+        // Upload to Cloudinary instead of Firebase Storage
+        const downloadURL = await uploadImageToCloudinary(profile.profilePic);
         
-        const filename = `${user.uid}-${Date.now()}`;
-        const storageRef = ref(storage, `profilePictures/${filename}`);
-        
-        // 2. Upload the new image to Cloud Storage
-        await uploadBytes(storageRef, blob);
-        
-        // 3. Get the public URL of the new image
-        const downloadURL = await getDownloadURL(storageRef);
-        
-        // 4. Update the data object with the new public URL
+        // Update the data object with the new public URL from Cloudinary
         dataToSave.profilePic = downloadURL;
       }
-      // --- END OF PHOTO UPDATE LOGIC ---
 
-
-      // 5. Update the user's entire profile document in Firestore
+      // Update the user's document in Firestore (this part is the same)
       const userDocRef = doc(db, 'users', user.uid);
       await updateDoc(userDocRef, dataToSave);
       
-      // Update local state to reflect changes immediately
       setProfile(dataToSave);
       Alert.alert("Success", "Your profile has been updated.");
       setIsEditMode(false);
@@ -213,10 +245,10 @@ const ProfileScreen = ({ navigation }) => {
 
   const renderViewMode = () => (
     <>
-      <View style={styles.card}><View style={styles.userInfo}><Image 
-  source={ profile.profilePic ? { uri: profile.profilePic } : require('../assets/default-avatar.png') } 
-  style={styles.profilePicSmall} 
-/><View><Text style={styles.userName}>{profile.name}</Text><Text style={styles.userEmail}>{profile.email}</Text></View></View></View>
+      <View style={styles.card}><View style={styles.userInfo}><Image
+        source={{ uri: profile.profilePic }}
+        style={styles.profilePicSmall}
+      /><View><Text style={styles.userName}>{profile.name}</Text><Text style={styles.userEmail}>{profile.email}</Text></View></View></View>
       <View style={styles.card}><Text style={styles.cardTitle}>Personal Details</Text><DetailRow label="Height" value={`${profile.height || 'N/A'} cm`} /><DetailRow label="Weight" value={`${profile.weight || 'N/A'} kg`} /><DetailRow label="Gender" value={profile.gender || 'N/A'} /></View>
       <View style={styles.card}><Text style={styles.cardTitle}>Fitness Goals</Text><Text style={styles.goalText}>{profile.goal || 'N/A'}</Text></View>
       <TouchableOpacity style={styles.editButton} onPress={() => setIsEditMode(true)}><Text style={styles.actionButtonText}>Edit Profile</Text></TouchableOpacity>
@@ -228,7 +260,7 @@ const ProfileScreen = ({ navigation }) => {
     <>
       <View style={{ alignItems: 'center', marginBottom: 24 }}><TouchableOpacity onPress={handlePickImage}>
   <Image 
-    source={{ uri: profile.profilePic || require('../assets/default-avatar.png') }} 
+    source={{ uri: profile.profilePic }} 
     style={styles.profilePicLarge} 
   />
   <View style={styles.profilePicOverlay}>
@@ -291,7 +323,7 @@ const styles = StyleSheet.create({
     input: { flex: 1, padding: 12, fontSize: 16 },
     unitText: { fontSize: 16, color: 'gray', paddingRight: 12 },
     pickerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#ddd', borderRadius: 12, padding: 12 },
-    pickerText: { fontSize: 16 },
+    pickerText: { fontSize: 16, paddingRight: 10 },
     modalContainer: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
     modalContent: { backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingVertical: 20 },
     modalTitle: { fontSize: 20, fontWeight: 'bold', textAlign: 'center', paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: '#eee' },

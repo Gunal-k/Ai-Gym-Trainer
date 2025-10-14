@@ -59,7 +59,7 @@ const RegisterScreen = ({ navigation }) => {
         weight: '', // Default empty value
         gender: '', // Default empty value
         goal: '', // Default empty value
-        profilePic: '../assets/profile.png', // Default profile picture
+        profilePic: 'https://res.cloudinary.com/devl15ini/image/upload/v1760431119/avatar_iglwip.png', // Default profile picture
         createdAt: new Date(), // Timestamp of creation
       });
       console.log('User profile created in Firestore');
