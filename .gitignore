@@ -16,7 +16,9 @@
 **/node_modules/
 **/venv/
 **/.expo/
-**/.env/
+
+#secret
+.env
 
 # 6) Unignore a specific folder if a broader rule matched it
 #!/backend/secret/keepme/
