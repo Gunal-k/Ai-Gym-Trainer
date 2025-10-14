@@ -5,6 +5,8 @@ import {
   Text,
   TouchableOpacity,
   Image,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -13,14 +15,57 @@ import { COLORS } from '../constants/theme';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 
 // We get the 'navigation' prop from React Navigation
+// --- IMPORTANT ---
+// 1. Find your computer's current Local IP Address (e.g., 192.168.1.15).
+// 2. Replace 'YOUR_COMPUTER_IP' below with that address.
+// 3. Make sure your phone/emulator and computer are on the SAME Wi-Fi network.
+// Note: If using an Android Emulator, you can often use '10.0.2.2' instead of your IP.
+const backendUrl = 'http://10.0.2.2:8000/analyze/snapshot';
+
 const PhotoAnalysisScreen = ({ navigation }) => {
   const [imageUri, setImageUri] = useState(null);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false); // --- ADDED for loading state ---
 
-  const handleConfirm = () => {
-    // When the user confirms, navigate to the main workout plans screen
-    navigation.navigate('WorkoutPlans');
+  // --- MODIFIED: The handleConfirm function ---
+  const handleConfirm = async () => {
+    if (!imageUri) return;
+
+    setIsAnalyzing(true);
+    const formData = new FormData();
+    formData.append('file', {
+      uri: imageUri,
+      type: 'image/jpeg',
+      name: 'user-photo.jpg',
+    });
+
+    try {
+      const response = await fetch(backendUrl, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.detail || 'Analysis failed.');
+      }
+      
+      console.log('Analysis successful:', result.landmarks.length, 'landmarks found.');
+
+      // Navigate to the next screen, passing the analysis results as a parameter
+      navigation.navigate('WorkoutPlans', { analysisResult: result });
+
+    } catch (error) {
+      console.error('Failed to analyze image:', error);
+      Alert.alert('Analysis Error', error.message);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const handleCapture = async () => {
@@ -58,14 +103,10 @@ const PhotoAnalysisScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
-
-      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>AI Gym Trainer</Text>
+        <Text style={styles.headerTitle}>AI Body Analysis</Text>
       </View>
-
       <View style={styles.container}>
-        {/* Image Preview */}
         <View style={styles.imageContainer}>
           {imageUri ? (
             <Image source={{ uri: imageUri }} style={styles.imagePreview} />
@@ -74,20 +115,25 @@ const PhotoAnalysisScreen = ({ navigation }) => {
           )}
           <View style={styles.imageOverlay}>
             <Text style={styles.overlayText}>
-              Ensure full body is visible within the frame.
+              Ensure your full body is visible within the frame.
             </Text>
           </View>
         </View>
         
-        {/* Capture & Action Buttons */}
         {imageUri ? (
           <View style={styles.actionsContainer}>
             <View style={styles.buttonRow}>
               <TouchableOpacity style={styles.retakeButton} onPress={handleRetake}>
                 <Text style={styles.retakeButtonText}>Retake</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
-                <Text style={styles.confirmButtonText}>Confirm</Text>
+              
+              {/* --- MODIFIED: Confirm Button with loading state --- */}
+              <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm} disabled={isAnalyzing}>
+                {isAnalyzing ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Confirm & Analyze</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
