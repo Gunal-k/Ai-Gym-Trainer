@@ -18,7 +18,8 @@
         {
           "photosPermission": "The app needs access to your photos so you can select a profile picture."
         }
-      ]
+      ],
+      "react-native-vision-camera"
     ],
     "ios": {
       "supportsTablet": true

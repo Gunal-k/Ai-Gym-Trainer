@@ -1,21 +1,109 @@
-import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  TouchableOpacity,
-} from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, Alert, AppState } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 import { COLORS } from '../constants/theme';
+import * as Speech from 'expo-speech';
+
+// --- IMPORTANT: Set your WebSocket URL here ---
+// Use 'ws://' instead of 'http://'
+const backendWsUrl = 'ws://192.168.1.3:8000/analysis/live-posture';
+const SPEECH_INTERVAL = 4000;
+const FRAME_PROCESSOR_INTERVAL = 1500;
 
 const LiveCameraScreen = ({ navigation }) => {
   const [isSessionActive, setIsSessionActive] = useState(false);
-  const [permission, requestPermission] = useCameraPermissions();
-  const [facing, setFacing] = useState('back');
   const [audioFeedback, setAudioFeedback] = useState(true);
+  const [feedback, setFeedback] = useState('Align yourself in the frame.');
+
+  const [cameraFacing, setCameraFacing] = useState('front');
+  const [speechQueue, setSpeechQueue] = useState(null);
+  
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const device = useCameraDevice(cameraFacing);
+
+  const socket = useRef(null);
+  const audioFeedbackRef = useRef(audioFeedback);
+  const cameraRef = useRef(null);
+
+  const lastSpokenFeedback = useRef(null);
+  const lastSpokenTime = useRef(0);
+
+  useEffect(() => {
+    audioFeedbackRef.current = audioFeedback;
+  }, [audioFeedback]);
+
+  // --- ADDED: Function to toggle camera
+  const toggleCameraFacing = () => {
+    setCameraFacing(current => (current === 'front' ? 'back' : 'front'));
+  };
+
+  useEffect(() => {
+    if (speechQueue) {
+      Speech.speak(speechQueue);
+      setSpeechQueue(null); // Clear the queue after speaking
+    }
+  }, [speechQueue]);
+
+  // Effect to manage WebSocket connection and frame sending interval
+  useEffect(() => {
+    if (!isSessionActive) {
+      if (socket.current) socket.current.close();
+      return;
+    }
+
+    socket.current = new WebSocket(backendWsUrl);
+    socket.current.onopen = () => console.log('WebSocket connection opened.');
+    socket.current.onclose = () => console.log('WebSocket connection closed.');
+    socket.current.onerror = (error) => Alert.alert('WebSocket Error', 'Connection failed.');
+    
+    socket.current.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.feedback) {
+        setFeedback(data.feedback);
+        const now = Date.now();
+        const isNewFeedback = data.feedback !== lastSpokenFeedback.current;
+        const hasEnoughTimePassed = now - lastSpokenTime.current > SPEECH_INTERVAL;
+
+        if (audioFeedbackRef.current && (isNewFeedback || hasEnoughTimePassed)) {
+          setSpeechQueue(data.feedback);
+          lastSpokenFeedback.current = data.feedback;
+          lastSpokenTime.current = now;
+        }
+      }
+    };
+
+    // Use setInterval to periodically take a photo
+    const frameSender = setInterval(async () => {
+      if (cameraRef.current && socket.current && socket.current.readyState === WebSocket.OPEN) {
+        const photo = await cameraRef.current.takePhoto({
+          qualityPrioritization: 'speed',
+          skipMetadata: true,
+        });
+        
+        // Convert the photo to Base64 to send
+        const response = await fetch(`file://${photo.path}`);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onload = () => {
+            const base64String = reader.result.split(',')[1];
+            if (socket.current?.readyState === WebSocket.OPEN) {
+                socket.current.send(base64String);
+            }
+        };
+        reader.readAsDataURL(blob);
+      }
+    }, FRAME_PROCESSOR_INTERVAL);
+
+    // Cleanup function
+    return () => {
+      clearInterval(frameSender);
+      if (socket.current) socket.current.close();
+      Speech.stop();
+    };
+  }, [isSessionActive]); // Send a frame every 1.5 seconds
 
   if (!isSessionActive) {
     return (
@@ -38,13 +126,7 @@ const LiveCameraScreen = ({ navigation }) => {
   }
 
   // Handle permission states
-  if (!permission) {
-    // Camera permissions are still loading
-    return <View />;
-  }
-
-  if (!permission.granted) {
-    // Camera permissions are not granted yet
+  if (!hasPermission) {
     return (
       <View style={styles.permissionContainer}>
         <Text style={styles.permissionText}>We need your permission to show the camera</Text>
@@ -55,62 +137,70 @@ const LiveCameraScreen = ({ navigation }) => {
     );
   }
 
+  if (device == null) {
+    return (
+      <SafeAreaView style={styles.startSessionSafeArea}>
+        <Text>No camera device found.</Text>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: 'black' }}>
       <StatusBar style="light" />
-      <CameraView
-        style={styles.background}
-        facing={facing}
-      >
-        {/* Dark overlay for better text readability */}
-        <View style={styles.overlay} />
-        <SafeAreaView style={styles.safeArea}>
-          {/* Header */}
-          {/* The header can be removed if it's part of the tab navigator, 
-              or kept if this screen is presented modally. For now, we'll keep it. */}
-          <TouchableOpacity style={styles.header}>
-             {/* This could navigate back or end the session */}
-          </TouchableOpacity>
 
-          <View style={styles.container}>
-            {/* Top Content */}
-            <View style={styles.topContent}>
-              <Text style={styles.title}>Pose Detection Active</Text>
-              <Text style={styles.subtitle}>Real-time feedback for perfect form.</Text>
-              <TouchableOpacity
-                style={styles.audioToggle}
-                onPress={() => setAudioFeedback(!audioFeedback)}
-              >
-                <Ionicons
-                  name={audioFeedback ? "checkmark-circle" : "close-circle"}
-                  size={20}
-                  color={COLORS.primary}
-                />
-                <Text style={styles.audioText}>
-                  Audio Feedback {audioFeedback ? "On" : "Off"}
-                </Text>
+      {/* Layer 1: The Camera View (in the background) */}
+      <Camera
+        ref={cameraRef} // Add the ref here
+        style={StyleSheet.absoluteFill}
+        device={device}
+        isActive={isSessionActive && AppState.currentState === 'active'}
+        photo={true} // Enable photo mode
+      />
+
+      {/* Layer 2: The UI Overlay (on top) */}
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
+          
+          <View style={styles.topContent}>
+            <View style={styles.topControlsContainer}>
+              {/* Audio Toggle Button */}
+              <TouchableOpacity style={styles.audioToggle} onPress={() => setAudioFeedback(!audioFeedback)}>
+                <Ionicons name={audioFeedback ? "volume-high" : "volume-mute"} size={20} color={COLORS.textDark} />
+                <Text style={styles.audioText}>{audioFeedback ? "On" : "Off"}</Text>
               </TouchableOpacity>
-            </View>
-
-            {/* Middle Content: Pose Box */}
-            <View style={styles.poseBox}>
-              <Text style={styles.poseBoxText}>Correcting Form...</Text>
-            </View>
-
-            {/* Bottom Content */}
-            <View style={styles.bottomContent}>
-              <TouchableOpacity
-                style={styles.endButton} 
-                onPress={() => setIsSessionActive(false)}>
-                <Text style={styles.endButtonText}>End Session</Text>
+              {/* Camera Switch Button */}
+              <TouchableOpacity style={styles.controlButton} onPress={toggleCameraFacing}>
+                <Ionicons name="camera-reverse-outline" size={24} color={COLORS.textDark} />
               </TouchableOpacity>
             </View>
           </View>
-        </SafeAreaView>
-      </CameraView>
+
+          <View style={styles.poseBox}>
+            <Text style={styles.poseBoxText}>{feedback}</Text>
+          </View>
+
+          {/* <TouchableOpacity 
+              style={{...styles.endButton, backgroundColor: '#3498db', marginBottom: 10}} 
+              onPress={() => {
+                  console.log('Test button pressed. Speaking "Hello World"');
+                  Speech.speak('Hello World');
+              }}>
+              <Text style={styles.endButtonText}>Test Audio</Text>
+          </TouchableOpacity> */}
+
+          <View style={styles.bottomContent}>
+            <TouchableOpacity style={styles.endButton} onPress={() => setIsSessionActive(false)}>
+              <Text style={styles.endButtonText}>End Session</Text>
+            </TouchableOpacity>
+          </View>
+          
+        </View>
+      </SafeAreaView>
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   background: {
@@ -141,10 +231,10 @@ const styles = StyleSheet.create({
   },
   topContent: {
     alignItems: 'center',
-    marginTop: '5%',
+    width: '100%',
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
     color: COLORS.textLight,
     textAlign: 'center',
@@ -156,19 +246,20 @@ const styles = StyleSheet.create({
     marginTop: 8,
     opacity: 0.9,
   },
-  audioToggle: {
+  topControlsContainer: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    width: '100%',
   },
-  audioText: {
-    color: COLORS.textLight,
-    marginLeft: 8,
-    fontWeight: '500',
+  controlButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 10,
   },
   poseBox: {
     width: '90%',
@@ -269,6 +360,20 @@ const styles = StyleSheet.create({
     color: COLORS.textDark,
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  // --- ADDED STYLES ---
+  audioToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+  },
+  audioText: {
+    color: COLORS.textDark,
+    marginLeft: 8,
+    fontWeight: '600',
   },
 });
 

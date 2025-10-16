@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 
 // We get the 'navigation' prop from React Navigation
 // --- IMPORTANT ---
@@ -20,44 +20,36 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 // 2. Replace 'YOUR_COMPUTER_IP' below with that address.
 // 3. Make sure your phone/emulator and computer are on the SAME Wi-Fi network.
 // Note: If using an Android Emulator, you can often use '10.0.2.2' instead of your IP.
-const backendUrl = 'http://10.0.2.2:8000/analyze/snapshot';
+const backendUrl = 'http://192.168.1.3:8000/analyze/snapshot';
 
 const PhotoAnalysisScreen = ({ navigation }) => {
-  const [imageUri, setImageUri] = useState(null);
-  const [permission, requestPermission] = useCameraPermissions();
+  const [imagePath, setImagePath] = useState(null); // Use path instead of URI
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  // --- MODIFIED: Use new camera hooks ---
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const device = useCameraDevice('front');
   const cameraRef = useRef(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false); // --- ADDED for loading state ---
 
-  // --- MODIFIED: The handleConfirm function ---
   const handleConfirm = async () => {
-    if (!imageUri) return;
-
+    if (!imagePath) return;
     setIsAnalyzing(true);
+    
+    // The path from vision-camera needs to be prefixed for fetch
+    const fileUri = `file://${imagePath}`;
+    
     const formData = new FormData();
     formData.append('file', {
-      uri: imageUri,
+      uri: fileUri,
       type: 'image/jpeg',
       name: 'user-photo.jpg',
     });
 
     try {
-      const response = await fetch(backendUrl, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
+      const response = await fetch(backendUrl, { method: 'POST', body: formData });
       const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.detail || 'Analysis failed.');
-      }
+      if (!response.ok) throw new Error(result.detail || 'Analysis failed.');
       
-      console.log('Analysis successful:', result.landmarks.length, 'landmarks found.');
-
-      // Navigate to the next screen, passing the analysis results as a parameter
       navigation.navigate('WorkoutPlans', { analysisResult: result });
 
     } catch (error) {
@@ -71,8 +63,11 @@ const PhotoAnalysisScreen = ({ navigation }) => {
   const handleCapture = async () => {
     if (cameraRef.current) {
       try {
-        const photo = await cameraRef.current.takePictureAsync();
-        setImageUri(photo.uri);
+        // --- MODIFIED: Use the takePhoto method ---
+        const photo = await cameraRef.current.takePhoto({
+          qualityPrioritization: 'quality', // Prioritize quality for snapshot
+        });
+        setImagePath(photo.path);
       } catch (error) {
         console.error('Failed to take picture:', error);
       }
@@ -80,16 +75,10 @@ const PhotoAnalysisScreen = ({ navigation }) => {
   };
 
   const handleRetake = () => {
-    setImageUri(null);
+    setImagePath(null);
   };
 
-  if (!permission) {
-    // Camera permissions are still loading
-    return <View />;
-  }
-
-  if (!permission.granted) {
-    // Camera permissions are not granted yet
+  if (!hasPermission) {
     return (
       <View style={styles.permissionContainer}>
         <Text style={styles.permissionText}>We need your permission to show the camera</Text>
@@ -99,19 +88,33 @@ const PhotoAnalysisScreen = ({ navigation }) => {
       </View>
     );
   }
+
+  if (device == null) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Text style={{ textAlign: 'center' }}>No camera device found.</Text>
+      </SafeAreaView>
+    );
+  }
   
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>AI Body Analysis</Text>
-      </View>
+      <View style={styles.header}><Text style={styles.headerTitle}>AI Body Analysis</Text></View>
+
       <View style={styles.container}>
         <View style={styles.imageContainer}>
-          {imageUri ? (
-            <Image source={{ uri: imageUri }} style={styles.imagePreview} />
+          {imagePath ? (
+            <Image source={{ uri: `file://${imagePath}` }} style={styles.imagePreview} />
           ) : (
-            <CameraView style={styles.camera} facing="front" ref={cameraRef} />
+            // --- MODIFIED: Use the new Camera component ---
+            <Camera 
+              ref={cameraRef}
+              style={StyleSheet.absoluteFill}
+              device={device}
+              isActive={true}
+              photo={true} // Enable photo capture
+            />
           )}
           <View style={styles.imageOverlay}>
             <Text style={styles.overlayText}>
@@ -120,20 +123,14 @@ const PhotoAnalysisScreen = ({ navigation }) => {
           </View>
         </View>
         
-        {imageUri ? (
+        {imagePath ? (
           <View style={styles.actionsContainer}>
             <View style={styles.buttonRow}>
               <TouchableOpacity style={styles.retakeButton} onPress={handleRetake}>
                 <Text style={styles.retakeButtonText}>Retake</Text>
               </TouchableOpacity>
-              
-              {/* --- MODIFIED: Confirm Button with loading state --- */}
               <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm} disabled={isAnalyzing}>
-                {isAnalyzing ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.confirmButtonText}>Confirm & Analyze</Text>
-                )}
+                {isAnalyzing ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.confirmButtonText}>Confirm & Analyze</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -145,8 +142,6 @@ const PhotoAnalysisScreen = ({ navigation }) => {
           </View>
         )}
       </View>
-      
-      {/* The manual TabBar View has been REMOVED from here */}
     </SafeAreaView>
   );
 };

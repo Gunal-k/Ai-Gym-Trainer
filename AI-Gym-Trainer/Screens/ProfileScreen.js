@@ -22,8 +22,6 @@ import { signOut } from "firebase/auth";
 // --- FIREBASE IMPORTS ---
 import { auth, db, storage } from '../firebaseConfig'; // Make sure this path is correct
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-
 
 const GENDERS = ['Male', 'Female', 'Other', 'Prefer not to say'];
 const GOALS = [

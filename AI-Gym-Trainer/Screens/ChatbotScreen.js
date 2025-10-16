@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,143 +9,178 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator, // --- ADDED
+  Alert,             // --- ADDED
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
+import Markdown from 'react-native-markdown-display';
 
-// Mock data to build the UI without a backend
-const INITIAL_MESSAGES = [
-  {
-    id: '1',
-    sender: 'ai',
-    type: 'text',
-    content: "Hello! I'm your AI Gym Trainer. How can I assist you with your fitness journey today?",
-    timestamp: '10:00 AM',
-  },
-  {
-    id: '2',
-    sender: 'user',
-    type: 'text',
-    content: 'I need some diet advice for losing fat.',
-    timestamp: '10:01 AM',
-  },
-  {
-    id: '3',
-    sender: 'ai',
-    type: 'text',
-    content: 'Great! To help me tailor the best advice, could you tell me a bit about your current eating habits or any dietary restrictions?',
-    timestamp: '10:02 AM',
-  },
-  {
-    id: '4',
-    sender: 'ai',
-    type: 'text',
-    content: 'For effective fat loss, consider focusing on a balanced intake of protein, healthy fats, and complex carbohydrates. Aim for a caloric deficit of 300-500 calories per day.',
-    timestamp: '10:05 AM',
-  },
-  {
-    id: '5',
-    sender: 'ai',
-    type: 'dietPlan',
-    title: 'Personalized Diet Plan: Fat Loss',
-    items: [
-      'Prioritize lean proteins: chicken, fish, legumes.',
-      'Increase fiber intake: fruits, vegetables, whole grains.',
-      'Healthy fats: avocados, nuts, olive oil (in moderation).',
-      'Hydration: Drink at least 2-3 liters of water daily.',
-      'Limit processed foods and sugary drinks.',
-    ],
-    timestamp: '10:06 AM',
-  },
-  {
-    id: '6',
-    sender: 'user',
-    type: 'text',
-    content: 'What kind of workouts should I do?',
-    timestamp: '10:10 AM',
-  },
-  {
-    id: '7',
-    sender: 'ai',
-    type: 'workoutPlan',
-    title: 'Effective Fat Loss Workout Routine',
-    items: [
-      'Incorporate 3-4 days of strength training per week (full body or split).',
-      'Add 150-300 minutes of moderate-intensity cardio, or 75-150 minutes of vigorous-intensity cardio weekly.',
-      'Include HIIT sessions 1-2 times a week for maximum calorie burn.',
-      'Ensure proper warm-up and cool-down for each session.',
-    ],
-    timestamp: '10:11 AM',
-  },
-];
+// --- ADDED: Set your backend URL here ---
+const backendUrl = 'http://192.168.1.3:8000/chat';
 
 const ChatbotScreen = () => {
-  const [messages, setMessages] = useState(INITIAL_MESSAGES);
+  // --- MODIFIED: Removed mock data, added loading state ---
+  const [messages, setMessages] = useState([
+    {
+      id: '1',
+      sender: 'ai',
+      type: 'text',
+      content: "Hello! I'm your AI Gym Trainer. How can I assist you with your fitness journey today?",
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    },
+  ]);
   const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const flatListRef = useRef();
 
-  const handleSend = () => {
-    if (inputText.trim().length === 0) return;
+  // --- MODIFIED: The handleSend function is now async and calls the backend ---
+  const handleSend = async (messageText) => {
+    const textToSend = messageText || inputText.trim();
+    if (textToSend.length === 0) return;
 
     const newMessage = {
       id: Math.random().toString(),
       sender: 'user',
       type: 'text',
-      content: inputText.trim(),
+      content: textToSend,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
     setMessages(prevMessages => [...prevMessages, newMessage]);
     setInputText('');
-    // Here you would typically send the message to your backend
+    setIsLoading(true);
+
+    try {
+      const response = await fetch(backendUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: textToSend }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || 'Failed to get response from AI.');
+      }
+
+      const aiMessage = {
+        id: Math.random().toString(),
+        sender: 'ai',
+        type: 'text', // For now, we assume all responses are text. See note below.
+        content: result.reply,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setMessages(prevMessages => [...prevMessages, aiMessage]);
+
+    } catch (error) {
+      console.error("Error sending message to backend:", error);
+      Alert.alert("Connection Error", "I'm having trouble connecting to the AI brain. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
+  
+  // --- ADDED: Handler for suggestion chips ---
+  const handleSuggestionPress = (suggestion) => {
+    setInputText(suggestion); // Set text in input
+    handleSend(suggestion);   // Immediately send it
+  };
+
+  useEffect(() => {
+    if (flatListRef.current) {
+        flatListRef.current.scrollToEnd({ animated: true });
+    }
+  }, [messages]);
+
+  const markdownStyles = StyleSheet.create({
+        heading1: {
+            fontSize: 22,
+            fontWeight: 'bold',
+            color: COLORS.textDark,
+            marginTop: 10,
+            marginBottom: 5,
+        },
+        strong: {
+            fontWeight: 'bold',
+        },
+        list_item: {
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            marginVertical: 4,
+        },
+        bullet_list_icon: {
+            marginRight: 8,
+            fontSize: 16,
+            lineHeight: 24, // Align with text
+            color: COLORS.textDark,
+        },
+        text: { // General text style for the bot
+            color: COLORS.textDark,
+            fontSize: 15,
+        },
+    });
 
   const renderMessage = ({ item }) => {
     const isUser = item.sender === 'user';
 
-    if (item.type === 'text') {
-      return (
-        <View style={[styles.messageRow, isUser ? styles.userRow : styles.aiRow]}>
-          <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
-            <Text style={isUser ? styles.userText : styles.aiText}>{item.content}</Text>
-          </View>
-          <Text style={styles.timestamp}>{item.timestamp}</Text>
-        </View>
-      );
-    }
+    // if (item.type === 'text') {
+    //   return (
+    //     <View style={[styles.messageRow, isUser ? styles.userRow : styles.aiRow]}>
+    //       <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
+    //         <Text style={isUser ? styles.userText : styles.aiText}>{item.content}</Text>
+    //       </View>
+    //       <Text style={styles.timestamp}>{item.timestamp}</Text>
+    //     </View>
+    //   );
+    // }
 
-    if (item.type === 'dietPlan' || item.type === 'workoutPlan') {
-      return (
-        <View style={[styles.messageRow, styles.aiRow]}>
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <MaterialCommunityIcons
-                name={item.type === 'dietPlan' ? 'silverware-fork-knife' : 'dumbbell'}
-                size={24}
-                color={COLORS.primaryAction}
-              />
-              <Text style={styles.cardTitle}>{item.title}</Text>
+    // if (item.type === 'dietPlan' || item.type === 'workoutPlan') {
+    //   return (
+    //     <View style={[styles.messageRow, styles.aiRow]}>
+    //       <View style={styles.card}>
+    //         <View style={styles.cardHeader}>
+    //           <MaterialCommunityIcons
+    //             name={item.type === 'dietPlan' ? 'silverware-fork-knife' : 'dumbbell'}
+    //             size={24}
+    //             color={COLORS.primaryAction}
+    //           />
+    //           <Text style={styles.cardTitle}>{item.title}</Text>
+    //         </View>
+    //         {item.items.map((point, index) => (
+    //           <View key={index} style={styles.cardListItem}>
+    //             <Ionicons name="checkmark-circle" size={18} color={COLORS.userBubble} />
+    //             <Text style={styles.cardListText}>{point}</Text>
+    //           </View>
+    //         ))}
+    //         <TouchableOpacity style={styles.cardButton}>
+    //           <Text style={styles.cardButtonText}>
+    //             {item.type === 'dietPlan' ? 'Generate Full Meal Plan' : 'Start Workout Session'}
+    //           </Text>
+    //         </TouchableOpacity>
+    //       </View>
+    //        <Text style={styles.timestamp}>{item.timestamp}</Text>
+    //     </View>
+    //   );
+    // }
+
+    // return null;
+    return (
+            <View style={[styles.messageRow, isUser ? styles.userRow : styles.aiRow]}>
+                <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
+                    
+                    {/* --- 3. USE MARKDOWN FOR AI, TEXT FOR USER --- */}
+                    {isUser ? (
+                        <Text style={styles.userText}>{item.content}</Text>
+                    ) : (
+                        <Markdown style={markdownStyles}>{item.content}</Markdown>
+                    )}
+
+                </View>
+                <Text style={styles.timestamp}>{item.timestamp}</Text>
             </View>
-            {item.items.map((point, index) => (
-              <View key={index} style={styles.cardListItem}>
-                <Ionicons name="checkmark-circle" size={18} color={COLORS.userBubble} />
-                <Text style={styles.cardListText}>{point}</Text>
-              </View>
-            ))}
-            <TouchableOpacity style={styles.cardButton}>
-              <Text style={styles.cardButtonText}>
-                {item.type === 'dietPlan' ? 'Generate Full Meal Plan' : 'Start Workout Session'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-           <Text style={styles.timestamp}>{item.timestamp}</Text>
-        </View>
-      );
-    }
-
-    return null;
+        );
   };
 
   return (
@@ -157,21 +192,33 @@ const ChatbotScreen = () => {
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
-        
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
         <FlatList
           ref={flatListRef}
           data={messages}
           renderItem={renderMessage}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.messageList}
-          // The inverted prop is not used here to keep the natural top-to-bottom order for cards
         />
+
+        {/* --- ADDED: AI "is typing..." indicator --- */}
+        {isLoading && (
+            <View style={[styles.messageRow, styles.aiRow]}>
+                <View style={[styles.bubble, styles.aiBubble]}>
+                    <ActivityIndicator size="small" color={COLORS.textDark} />
+                </View>
+            </View>
+        )}
 
         <View style={styles.suggestionArea}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <TouchableOpacity style={styles.suggestionChip}><Text style={styles.suggestionText}>Generate a 7-day meal plan</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.suggestionChip}><Text style={styles.suggestionText}>Recommend a beginner routine</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.suggestionChip} onPress={() => handleSuggestionPress('Generate a 7-day meal plan')}>
+              <Text style={styles.suggestionText}>Generate a 7-day meal plan</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.suggestionChip} onPress={() => handleSuggestionPress('Recommend a beginner routine')}>
+              <Text style={styles.suggestionText}>Recommend a beginner routine</Text>
+            </TouchableOpacity>
           </ScrollView>
         </View>
 
@@ -182,8 +229,9 @@ const ChatbotScreen = () => {
             placeholderTextColor={COLORS.textSecondary}
             value={inputText}
             onChangeText={setInputText}
+            onSubmitEditing={() => handleSend()} // Allows sending with keyboard "Go" button
           />
-          <TouchableOpacity style={styles.sendButton} onPress={handleSend}>
+          <TouchableOpacity style={styles.sendButton} onPress={() => handleSend()} disabled={isLoading}>
             <Ionicons name="send" size={20} color={COLORS.textLight} />
           </TouchableOpacity>
         </View>
@@ -206,7 +254,7 @@ const styles = StyleSheet.create({
   aiBubble: { backgroundColor: COLORS.aiBubble, borderTopLeftRadius: 4 },
   userText: { color: COLORS.textLight, fontSize: 15 },
   aiText: { color: COLORS.textDark, fontSize: 15 },
-  timestamp: { fontSize: 10, color: COLORS.textSecondary, marginTop: 4, marginHorizontal: 8 },
+  timestamp: { fontSize: 10, color: COLORS.textSecondary, marginTop: 4, marginHorizontal: 8, paddingHorizontal:5 },
   card: { backgroundColor: COLORS.aiCard, borderRadius: 16, padding: 16, maxWidth: '90%', borderWidth: 1, borderColor: COLORS.border },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   cardTitle: { fontSize: 16, fontWeight: 'bold', color: COLORS.textDark, marginLeft: 8 },
@@ -216,7 +264,7 @@ const styles = StyleSheet.create({
   cardButtonText: { color: COLORS.textLight, fontWeight: 'bold' }, 
   suggestionArea: { paddingVertical: 8, paddingLeft: 16, backgroundColor: COLORS.background },
   suggestionChip: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: COLORS.background, borderRadius: 20, marginRight: 8, borderWidth: 1, borderColor: COLORS.border },
-  suggestionText: { color: COLORS.textDark },
+  suggestionText: { color: COLORS.textDark,paddingHorizontal: 10 },
   inputContainer: { flexDirection: 'row', alignItems: 'center', padding: 8, borderTopWidth: 1, borderTopColor: COLORS.border, backgroundColor: '#FFFFFF' },
   textInput: { flex: 1, backgroundColor: COLORS.aiBubble, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, fontSize: 16, marginRight: 8 },
   sendButton: { backgroundColor: COLORS.userBubble, width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
