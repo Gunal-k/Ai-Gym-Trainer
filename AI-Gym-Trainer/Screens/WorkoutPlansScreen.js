@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,40 +6,30 @@ import {
   TouchableOpacity,
   Image,
   ScrollView,
+  ActivityIndicator, // --- ADDED for loading state
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 
-const exercises = [
-  {
-    id: '1',
-    name: 'Push-Ups',
-    details: 'Classic bodyweight exercise for chest, shoulders, and triceps.',
-    sets: '3 Sets of 12 Reps',
-    image: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?q=80&w=2070&auto=format&fit=crop',
-  },
-  {
-    id: '2',
-    name: 'Squats',
-    details: 'Fundamental lower body exercise for quads, hamstrings, and glutes.',
-    sets: '3 Sets of 15 Reps',
-    image: 'https://images.unsplash.com/photo-1599058917212-d750089bc07e?q=80&w=2069&auto=format&fit=crop',
-  },
-];
+// --- ADDED: Import your AI logic and Firebase services ---
+import { generateWorkoutPlan } from '../utils/generateWorkoutPlan';
+import { auth, db } from '../firebaseConfig';
+import { doc, getDoc } from 'firebase/firestore';
 
-// Reusable component for the small exercise cards
-const ExerciseCard = ({ exercise }) => (
+// --- MODIFIED: ExerciseCard now uses the new data structure ---
+const ExerciseCard = ({ item }) => (
   <View style={styles.exerciseCard}>
-    <Image source={{ uri: exercise.image }} style={styles.exerciseImage} />
+    <Image source={{ uri: item.exercise.image }} style={styles.exerciseImage} />
     <View style={styles.exerciseContent}>
-      <Text style={styles.exerciseTitle}>{exercise.name}</Text>
-      <Text style={styles.exerciseDetails}>{exercise.details}</Text>
+      <Text style={styles.exerciseTitle}>{item.exercise.name}</Text>
+      <Text style={styles.exerciseDetails}>{item.exercise.description}</Text>
       <View style={styles.exerciseSets}>
-        <MaterialCommunityIcons name="weight-lifter" size={16} color={COLORS.textLight} />
-        <Text style={styles.exerciseSetsText}>{exercise.sets}</Text>
+        <MaterialCommunityIcons name="weight-lifter" size={16} color={COLORS.textSecondary} />
+        <Text style={styles.exerciseSetsText}>{item.sets} sets of {item.reps}</Text>
       </View>
+      {/* This button can later navigate to an instruction screen */}
       <TouchableOpacity style={styles.detailsButtonSecondary}>
         <Text style={styles.detailsButtonTextSecondary}>View Instructions</Text>
       </TouchableOpacity>
@@ -47,25 +37,120 @@ const ExerciseCard = ({ exercise }) => (
   </View>
 );
 
-const WorkoutPlansScreen = () => {
+const WorkoutPlansScreen = ({ route }) => {
+  // --- ADDED: State management for dynamic data ---
+  const { analysisResult } = route.params;
+  const [userProfile, setUserProfile] = useState(null);
+  const [userData, setUserData] = useState(null);
+  const [generatedPlan, setGeneratedPlan] = useState(null);
+  const [loading, setLoading] = useState(true); // --- MODIFIED: Use a single loading state ---
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        const docRef = doc(db, 'users', user.uid);
+        try {
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            setUserProfile(docSnap.data());
+          }
+        } catch (error) {
+          console.error("Error fetching user data for header:", error);
+        }
+      }
+    };
+    fetchUserData();
+  }, []);
+
+  // --- ADDED: useEffect to fetch user data and generate the plan ---
+  useEffect(() => {
+    const initializePlan = async () => {
+      setLoading(true); // Start loading
+      setError(null);   // Clear previous errors
+      try {
+        // 1. Fetch user's profile data
+        const user = auth.currentUser;
+        if (!user) {
+          throw new Error("No user is logged in.");
+        }
+        
+        const docRef = doc(db, 'users', user.uid);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+          const userData = docSnap.data();
+          
+          // 2. Generate the workout plan
+          if (analysisResult && userData) {
+            const plan = generateWorkoutPlan(analysisResult, userData);
+            setGeneratedPlan(plan);
+          } else {
+            throw new Error("Missing analysis or user data.");
+          }
+        } else {
+          throw new Error("Could not find user profile.");
+        }
+      } catch (err) {
+        console.error("Failed to generate workout plan:", err);
+        setError(err.message);
+      } finally {
+        // 3. ALWAYS stop loading, whether it succeeded or failed
+        setLoading(false);
+      }
+    };
+    initializePlan();
+  }, [analysisResult]); // Rerun if the analysis result changes
+
+  // --- MODIFIED: Loading and Error UI States ---
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.safeArea, styles.center]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={{ marginTop: 10 }}>Generating your personalized plan...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={[styles.safeArea, styles.center]}>
+        <Ionicons name="alert-circle-outline" size={48} color="red" />
+        <Text style={{ marginTop: 10, textAlign: 'center' }}>Failed to generate plan: {error}</Text>
+      </SafeAreaView>
+    );
+  }
+
+  // This will show if the plan is null for some other reason
+  if (!generatedPlan) {
+    return (
+        <SafeAreaView style={[styles.safeArea, styles.center]}>
+            <Text>No workout plan could be generated.</Text>
+        </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Your Workout Plan</Text>
         <View style={styles.headerIcons}>
           <Ionicons name="notifications-outline" size={24} color={COLORS.textDark} />
-          <Image
-            source={{ uri: 'https://randomuser.me/api/portraits/men/32.jpg' }}
-            style={styles.profileImage}
-          />
+          {userProfile ? (
+            <Image
+              source={{ uri: userProfile.profilePic || 'https://via.placeholder.com/100' }}
+              style={styles.profileImage}
+            />
+          ) : (
+            <View style={styles.profileImage} /> // Placeholder while loading
+          )}
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        {/* Personalized Plan Card */}
-        <Text style={styles.sectionTitle}>Personalized Plan</Text>
+        <Text style={styles.sectionTitle}>Your Personalized Plan</Text>
         <View style={styles.planCard}>
           <Image
             source={{ uri: 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?q=80&w=2069&auto=format&fit=crop' }}
@@ -73,22 +158,22 @@ const WorkoutPlansScreen = () => {
           />
           <View style={styles.planContent}>
             <View style={styles.planHeader}>
-              <Text style={styles.planTitle}>Full Body Power Blast</Text>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>Intermediate</Text>
-              </View>
+              {/* --- MODIFIED: Use generated plan title --- */}
+              <Text style={styles.planTitle}>{generatedPlan.title}</Text>
+              <View style={styles.badge}><Text style={styles.badgeText}>AI Generated</Text></View>
             </View>
             <Text style={styles.planDescription}>
-              Maximize your strength and endurance with this comprehensive full-body workout.
+              This plan has been tailored for you based on your body analysis and goals.
             </Text>
             <View style={styles.planStats}>
               <View style={styles.statItem}>
-                <Ionicons name="time-outline" size={16} color={COLORS.textLight} />
-                <Text style={styles.statText}>45 mins</Text>
+                <Ionicons name="time-outline" size={16} color={COLORS.textSecondary} />
+                <Text style={styles.statText}>Approx. 45 mins</Text>
               </View>
               <View style={styles.statItem}>
-                <MaterialCommunityIcons name="dumbbell" size={16} color={COLORS.textLight} />
-                <Text style={styles.statText}>10 Exercises</Text>
+                <MaterialCommunityIcons name="dumbbell" size={16} color={COLORS.textSecondary} />
+                {/* --- MODIFIED: Use dynamic exercise count --- */}
+                <Text style={styles.statText}>{generatedPlan.workout.length} Exercises</Text>
               </View>
             </View>
             <View style={styles.planButtons}>
@@ -102,22 +187,27 @@ const WorkoutPlansScreen = () => {
           </View>
         </View>
 
-        {/* Recommended Exercises Section */}
-        <Text style={styles.sectionTitle}>Recommended Exercises</Text>
+        <Text style={styles.sectionTitle}>Exercises in Your Plan</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {exercises.map(exercise => (
-            <ExerciseCard key={exercise.id} exercise={exercise} />
+          {/* --- MODIFIED: Map over the generated workout --- */}
+          {generatedPlan.workout.map(item => (
+            <ExerciseCard key={item.exercise.id} item={item} />
           ))}
         </ScrollView>
-
-        {/* Workout Tips Section */}
         <Text style={styles.sectionTitle}>Workout Tips</Text>
+
         <View style={styles.tipCard}>
+
           <Ionicons name="bulb-outline" size={24} color={COLORS.primary} style={styles.tipIcon} />
+
           <View style={styles.tipContent}>
+
             <Text style={styles.tipTitle}>Stay Hydrated!</Text>
+
             <Text style={styles.tipText}>
+
               Remember to drink plenty of water throughout your workout and recovery to maintain peak performance and prevent dehydration. Proper hydration is key.
+
             </Text>
           </View>
         </View>

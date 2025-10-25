@@ -85,9 +85,9 @@ function App() {
     <NavigationContainer>
       <AuthStack.Navigator screenOptions={{ headerShown: false }}>
         {/* Auth flow screens */}
-        {/* <AuthStack.Screen name="Login" component={LoginScreen} />
+        <AuthStack.Screen name="Login" component={LoginScreen} />
         <AuthStack.Screen name="Register" component={RegisterScreen} />
-        <AuthStack.Screen name="CreateProfile" component={CreateProfileScreen} /> */}
+        <AuthStack.Screen name="CreateProfile" component={CreateProfileScreen} />
         
         {/* Main app with tabs */}
         <AuthStack.Screen name="MainApp" component={MainAppTabs} />

@@ -20,7 +20,7 @@ import { Camera, useCameraDevice, useCameraPermission } from 'react-native-visio
 // 2. Replace 'YOUR_COMPUTER_IP' below with that address.
 // 3. Make sure your phone/emulator and computer are on the SAME Wi-Fi network.
 // Note: If using an Android Emulator, you can often use '10.0.2.2' instead of your IP.
-const backendUrl = 'http://192.168.1.3:8000/analyze/snapshot';
+const backendUrl = `http://${process.env.EXPO_PUBLIC_YOUR_COMPUTER_IP}:8000/analyze/snapshot`;
 
 const PhotoAnalysisScreen = ({ navigation }) => {
   const [imagePath, setImagePath] = useState(null); // Use path instead of URI

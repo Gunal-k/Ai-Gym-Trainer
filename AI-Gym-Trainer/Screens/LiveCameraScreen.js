@@ -9,7 +9,7 @@ import * as Speech from 'expo-speech';
 
 // --- IMPORTANT: Set your WebSocket URL here ---
 // Use 'ws://' instead of 'http://'
-const backendWsUrl = 'ws://192.168.1.3:8000/analysis/live-posture';
+const backendWsUrl = `ws://${process.env.EXPO_PUBLIC_YOUR_COMPUTER_IP}:8000/analysis/live-posture`;
 const SPEECH_INTERVAL = 4000;
 const FRAME_PROCESSOR_INTERVAL = 1500;
 
