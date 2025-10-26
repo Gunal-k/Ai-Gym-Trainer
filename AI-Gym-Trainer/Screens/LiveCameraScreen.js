@@ -16,6 +16,7 @@ const FRAME_PROCESSOR_INTERVAL = 1500;
 const LiveCameraScreen = ({ navigation }) => {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [audioFeedback, setAudioFeedback] = useState(true);
+  const [workout, setWorkout] = useState(null);
   const [feedback, setFeedback] = useState('Align yourself in the frame.');
 
   const [cameraFacing, setCameraFacing] = useState('front');
@@ -179,15 +180,6 @@ const LiveCameraScreen = ({ navigation }) => {
           <View style={styles.poseBox}>
             <Text style={styles.poseBoxText}>{feedback}</Text>
           </View>
-
-          {/* <TouchableOpacity 
-              style={{...styles.endButton, backgroundColor: '#3498db', marginBottom: 10}} 
-              onPress={() => {
-                  console.log('Test button pressed. Speaking "Hello World"');
-                  Speech.speak('Hello World');
-              }}>
-              <Text style={styles.endButtonText}>Test Audio</Text>
-          </TouchableOpacity> */}
 
           <View style={styles.bottomContent}>
             <TouchableOpacity style={styles.endButton} onPress={() => setIsSessionActive(false)}>

@@ -6,20 +6,20 @@ import {
   TouchableOpacity,
   Image,
   ScrollView,
-  ActivityIndicator, // --- ADDED for loading state
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
-
-// --- ADDED: Import your AI logic and Firebase services ---
 import { generateWorkoutPlan } from '../utils/generateWorkoutPlan';
 import { auth, db } from '../firebaseConfig';
 import { doc, getDoc } from 'firebase/firestore';
+// --- 1. Import useNavigation hook ---
+import { useNavigation } from '@react-navigation/native';
 
-// --- MODIFIED: ExerciseCard now uses the new data structure ---
-const ExerciseCard = ({ item }) => (
+// --- 2. MODIFIED ExerciseCard to accept navigation prop ---
+const ExerciseCard = ({ item, navigation }) => ( // Added navigation
   <View style={styles.exerciseCard}>
     <Image source={{ uri: item.exercise.image }} style={styles.exerciseImage} />
     <View style={styles.exerciseContent}>
@@ -29,62 +29,48 @@ const ExerciseCard = ({ item }) => (
         <MaterialCommunityIcons name="weight-lifter" size={16} color={COLORS.textSecondary} />
         <Text style={styles.exerciseSetsText}>{item.sets} sets of {item.reps}</Text>
       </View>
-      {/* This button can later navigate to an instruction screen */}
-      <TouchableOpacity style={styles.detailsButtonSecondary}>
+      <TouchableOpacity
+        style={styles.detailsButtonSecondary}
+        // --- 3. Use navigation prop and correct 'item' variable ---
+        onPress={() => navigation.navigate('ExerciseDetail', { exercise: item.exercise })}
+      >
         <Text style={styles.detailsButtonTextSecondary}>View Instructions</Text>
       </TouchableOpacity>
     </View>
   </View>
 );
 
+// --- 4. Get 'navigation' prop ---
 const WorkoutPlansScreen = ({ route }) => {
-  // --- ADDED: State management for dynamic data ---
   const { analysisResult } = route.params;
-  const [userProfile, setUserProfile] = useState(null);
+  const navigation = useNavigation(); // --- Initialize navigation ---
+
+  // --- 5. Simplified State ---
   const [userData, setUserData] = useState(null);
   const [generatedPlan, setGeneratedPlan] = useState(null);
-  const [loading, setLoading] = useState(true); // --- MODIFIED: Use a single loading state ---
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // --- 6. COMBINED useEffect for all data fetching ---
   useEffect(() => {
-    const fetchUserData = async () => {
-      const user = auth.currentUser;
-      if (user) {
-        const docRef = doc(db, 'users', user.uid);
-        try {
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            setUserProfile(docSnap.data());
-          }
-        } catch (error) {
-          console.error("Error fetching user data for header:", error);
-        }
-      }
-    };
-    fetchUserData();
-  }, []);
-
-  // --- ADDED: useEffect to fetch user data and generate the plan ---
-  useEffect(() => {
-    const initializePlan = async () => {
-      setLoading(true); // Start loading
-      setError(null);   // Clear previous errors
+    const initializeData = async () => {
+      setLoading(true);
+      setError(null);
       try {
-        // 1. Fetch user's profile data
+        // 1. Fetch user's profile data (ONLY ONCE)
         const user = auth.currentUser;
-        if (!user) {
-          throw new Error("No user is logged in.");
-        }
+        if (!user) throw new Error("No user is logged in.");
         
         const docRef = doc(db, 'users', user.uid);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
-          const userData = docSnap.data();
+          const fetchedUserData = docSnap.data();
+          setUserData(fetchedUserData); // Set data for header AND generator
           
           // 2. Generate the workout plan
-          if (analysisResult && userData) {
-            const plan = generateWorkoutPlan(analysisResult, userData);
+          if (analysisResult && fetchedUserData) {
+            const plan = generateWorkoutPlan(analysisResult, fetchedUserData);
             setGeneratedPlan(plan);
           } else {
             throw new Error("Missing analysis or user data.");
@@ -96,19 +82,18 @@ const WorkoutPlansScreen = ({ route }) => {
         console.error("Failed to generate workout plan:", err);
         setError(err.message);
       } finally {
-        // 3. ALWAYS stop loading, whether it succeeded or failed
         setLoading(false);
       }
     };
-    initializePlan();
-  }, [analysisResult]); // Rerun if the analysis result changes
+    initializeData();
+  }, [analysisResult]); // Only depends on analysisResult
 
-  // --- MODIFIED: Loading and Error UI States ---
+  // --- Loading and Error UI States (Unchanged) ---
   if (loading) {
     return (
       <SafeAreaView style={[styles.safeArea, styles.center]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={{ marginTop: 10 }}>Generating your personalized plan...</Text>
+        <Text style={{ marginTop: 10, textAlign: 'center' }}>Generating your personalized plan...</Text>
       </SafeAreaView>
     );
   }
@@ -121,32 +106,31 @@ const WorkoutPlansScreen = ({ route }) => {
       </SafeAreaView>
     );
   }
-
-  // This will show if the plan is null for some other reason
+  
   if (!generatedPlan) {
-    return (
-        <SafeAreaView style={[styles.safeArea, styles.center]}>
-            <Text>No workout plan could be generated.</Text>
-        </SafeAreaView>
-    );
+     return (
+       <SafeAreaView style={[styles.safeArea, styles.center]}>
+           <Text>No workout plan could be generated.</Text>
+       </SafeAreaView>
+     );
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Your Workout Plan</Text>
-        <View style={styles.headerIcons}>
-          <Ionicons name="notifications-outline" size={24} color={COLORS.textDark} />
-          {userProfile ? (
-            <Image
-              source={{ uri: userProfile.profilePic || 'https://via.placeholder.com/100' }}
-              style={styles.profileImage}
-            />
-          ) : (
-            <View style={styles.profileImage} /> // Placeholder while loading
-          )}
-        </View>
+        <Text style={styles.headerTitle}>AI Gym Trainer</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('ProfileTab')}>
+            {userData ? (
+              <Image
+                source={{ uri: userData.profilePic || 'https://via.placeholder.com/100' }}
+                style={styles.profileImage}
+              />
+            ) : (
+              <View style={styles.profileImage} />
+            )}
+          </TouchableOpacity>
+
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContainer}>
@@ -177,11 +161,12 @@ const WorkoutPlansScreen = ({ route }) => {
               </View>
             </View>
             <View style={styles.planButtons}>
-              <TouchableOpacity style={styles.startButton}>
+              <TouchableOpacity
+                style={styles.startButton}
+                // --- 8. Use correct variable 'generatedPlan.workout' ---
+                onPress={() => navigation.navigate('LiveCameraTab', { workoutPlan: generatedPlan.workout, setIsSessionActive: true })}
+              >
                 <Text style={styles.startButtonText}>Start Workout</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.detailsButton}>
-                <Text style={styles.detailsButtonText}>View Details</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -189,9 +174,9 @@ const WorkoutPlansScreen = ({ route }) => {
 
         <Text style={styles.sectionTitle}>Exercises in Your Plan</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {/* --- MODIFIED: Map over the generated workout --- */}
           {generatedPlan.workout.map(item => (
-            <ExerciseCard key={item.exercise.id} item={item} />
+            // --- 2. Pass navigation to the card ---
+            <ExerciseCard key={item.exercise.id} item={item} navigation={navigation} />
           ))}
         </ScrollView>
         <Text style={styles.sectionTitle}>Workout Tips</Text>
@@ -217,7 +202,7 @@ const WorkoutPlansScreen = ({ route }) => {
 };
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.backgroundLight },
+  safeArea: { flex: 1, backgroundColor: COLORS.backgroundLight }, 
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',

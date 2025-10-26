@@ -4,7 +4,7 @@ import mediapipe as mp
 import base64
 import random
 import time
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -140,27 +140,19 @@ def analyze_bicep_curl(landmarks, state):
     VISIBILITY_THRESHOLD = 0.6
     try:
         # --- Get Left Arm Landmarks & Angle ---
-        left_shoulder_vis = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].visibility
-        left_elbow_vis = landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].visibility
-        left_wrist_vis = landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].visibility
-        
+        left_shoulder = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_SHOULDER)
+        left_elbow = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_ELBOW)
+        left_wrist = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_WRIST)
         left_angle = -1.0
-        if left_shoulder_vis > VISIBILITY_THRESHOLD and left_elbow_vis > VISIBILITY_THRESHOLD and left_wrist_vis > VISIBILITY_THRESHOLD:
-            left_shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-            left_elbow = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x, landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
-            left_wrist = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x, landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
+        if None not in [left_shoulder, left_elbow, left_wrist]:
             left_angle = calculate_angle(left_shoulder, left_elbow, left_wrist)
 
         # --- Get Right Arm Landmarks & Angle ---
-        right_shoulder_vis = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].visibility
-        right_elbow_vis = landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].visibility
-        right_wrist_vis = landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].visibility
-        
+        right_shoulder = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_SHOULDER)
+        right_elbow = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_ELBOW)
+        right_wrist = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_WRIST)
         right_angle = -1.0
-        if right_shoulder_vis > VISIBILITY_THRESHOLD and right_elbow_vis > VISIBILITY_THRESHOLD and right_wrist_vis > VISIBILITY_THRESHOLD:
-            right_shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
-            right_elbow = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
-            right_wrist = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
+        if None not in [right_shoulder, right_elbow, right_wrist]:
             right_angle = calculate_angle(right_shoulder, right_elbow, right_wrist)
 
         # --- Left Arm Rep Logic ---
@@ -170,7 +162,7 @@ def analyze_bicep_curl(landmarks, state):
             elif left_angle < 40 and state['left_stage'] == 'down': # Arm is curled up
                 state['left_counter'] += 1
                 state['left_stage'] = 'up'
-                feedback = f"Rep {state['left_counter'] + state['right_counter']}" # Give total reps
+                feedback = f"Rep {state['left_counter'] + state['right_counter']}"
                 rep_counted_this_frame = True
 
         # --- Right Arm Rep Logic ---
@@ -180,25 +172,21 @@ def analyze_bicep_curl(landmarks, state):
             elif right_angle < 40 and state['right_stage'] == 'down': # Arm is curled up
                 state['right_counter'] += 1
                 state['right_stage'] = 'up'
-                feedback = f"Rep {state['left_counter'] + state['right_counter']}" # Give total reps
+                feedback = f"Rep {state['left_counter'] + state['right_counter']}"
                 rep_counted_this_frame = True
         
         # --- Corrective Feedback (if no rep was counted) ---
-        if not rep_counted_this_frame:
-            # Check if either arm is in the 'down' stage and moving up
+        if not rep_counted_this_frame and not feedback:
             if (state['left_stage'] == 'down' and 40 < left_angle < 150) or \
                (state['right_stage'] == 'down' and 40 < right_angle < 150):
                 feedback = random.choice(BICEP_CURL_UP_CUES)
-            # Check if either arm is in the 'up' stage and moving down
             elif (state['left_stage'] == 'up' and left_angle > 50) or \
                  (state['right_stage'] == 'up' and right_angle > 50):
                 feedback = random.choice(BICEP_CURL_DOWN_CUES)
 
     except Exception as e:
-        # print(f"Bicep analysis error: {e}") # Uncomment for debugging
         feedback = random.choice(VISIBILITY_CUES)
     
-    # Update the main counter to be the total of both arms
     state['counter'] = state['left_counter'] + state['right_counter']
     return (feedback if feedback else "Keep curling."), state
 
@@ -402,8 +390,8 @@ async def live_posture(ws: WebSocket):
                 # --- Call analysis functions based on detected workout ---
                 elif state["current_workout"] == "pushup":
                     feedback, state = analyze_pushup(lm, state)
-                elif state["current_workout"] == "bicep_curl":
-                    feedback, state = analyze_bicep_curl(lm, state)
+                elif state["current_workout"]=="bicep_curl":
+                    feedback,state = analyze_bicep_curl(lm,state)
                 elif state["current_workout"] == "squat":
                     feedback, state = analyze_squat(lm, state)
 
@@ -422,6 +410,48 @@ async def live_posture(ws: WebSocket):
              await ws.close()
         except RuntimeError:
              pass # Connection already closed
+
+@app.post("/analyze/snapshot")
+async def analyze_snapshot(file: UploadFile = File(...)):
+    """
+    Analyzes a single snapshot, detects pose, and returns all 33
+    landmark coordinates in the format the frontend expects.
+    """
+    try:
+        # 1. Read and decode the image file
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise HTTPException(status_code=400, detail="Could not decode image.")
+
+        # 2. Process the image for pose
+        results = pose.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        
+        if not results.pose_landmarks:
+            raise HTTPException(status_code=400, detail="Could not detect a person in the image.")
+
+        # 3. Format landmarks for the frontend
+        # The JS code expects an array of objects with "id" and "x" keys
+        landmarks_data = []
+        all_landmarks = results.pose_landmarks.landmark
+        
+        for id_value, lm in enumerate(all_landmarks):
+            landmarks_data.append({
+                "id": id_value,
+                "name": mp_pose.PoseLandmark(id_value).name,
+                "x": lm.x,
+                "y": lm.y,
+                "z": lm.z,
+                "visibility": lm.visibility
+            })
+
+        # 4. Return the data
+        return {"landmarks": landmarks_data}
+
+    except Exception as e:
+        print(f"Snapshot Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing image: {e}")
 
 @app.get("/")
 def root(): return {"message":"Pose Analysis Service Running"}

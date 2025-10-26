@@ -75,6 +75,7 @@ This is the Python backend microservice for the AI Gym Trainer application. It u
     uvicorn main:app --reload
     ```
     # To expose the server to your local network (e.g., for mobile app testing), use:
+    # .\venv\Scripts\activate
     # uvicorn analysis:app --host 0.0.0.0 --port 8000 --reload
     # uvicorn chat_service:app --host 0.0.0.0 --port 8001 --reload
     

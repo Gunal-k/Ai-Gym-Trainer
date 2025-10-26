@@ -17,6 +17,7 @@ import WorkoutPlansScreen from './Screens/WorkoutPlansScreen'; // <-- IMPORT THI
 import ChatbotScreen from './Screens/ChatbotScreen';
 import LiveCameraScreen from './Screens/LiveCameraScreen';
 import ProfileScreen from './Screens/ProfileScreen';
+import ExerciseDetailScreen from './Screens/ExerciseDetailScreen';
 
 
 const AuthStack = createStackNavigator();
@@ -29,6 +30,7 @@ function WorkoutNavigator() {
     <WorkoutStack.Navigator screenOptions={{ headerShown: false }}>
       <WorkoutStack.Screen name="PhotoAnalysis" component={PhotoAnalysisScreen} />
       <WorkoutStack.Screen name="WorkoutPlans" component={WorkoutPlansScreen} />
+      <WorkoutStack.Screen name="ExerciseDetail" component={ExerciseDetailScreen} />
     </WorkoutStack.Navigator>
   );
 }
