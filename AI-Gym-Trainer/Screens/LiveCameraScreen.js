@@ -16,8 +16,10 @@ const FRAME_PROCESSOR_INTERVAL = 1500;
 const LiveCameraScreen = ({ navigation }) => {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [audioFeedback, setAudioFeedback] = useState(true);
-  const [workout, setWorkout] = useState(null);
   const [feedback, setFeedback] = useState('Align yourself in the frame.');
+  const [reps, setReps] = useState(0);
+  const [exercise, setExercise] = useState('None');
+
 
   const [cameraFacing, setCameraFacing] = useState('front');
   const [speechQueue, setSpeechQueue] = useState(null);
@@ -62,8 +64,10 @@ const LiveCameraScreen = ({ navigation }) => {
     
     socket.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
+
       if (data.feedback) {
         setFeedback(data.feedback);
+
         const now = Date.now();
         const isNewFeedback = data.feedback !== lastSpokenFeedback.current;
         const hasEnoughTimePassed = now - lastSpokenTime.current > SPEECH_INTERVAL;
@@ -74,7 +78,12 @@ const LiveCameraScreen = ({ navigation }) => {
           lastSpokenTime.current = now;
         }
       }
+
+      // 🟢 Add these lines
+      if (data.reps !== undefined) setReps(data.reps);
+      if (data.exercise) setExercise(data.exercise);
     };
+
 
     // Use setInterval to periodically take a photo
     const frameSender = setInterval(async () => {
@@ -170,6 +179,8 @@ const LiveCameraScreen = ({ navigation }) => {
                 <Ionicons name={audioFeedback ? "volume-high" : "volume-mute"} size={20} color={COLORS.textDark} />
                 <Text style={styles.audioText}>{audioFeedback ? "On" : "Off"}</Text>
               </TouchableOpacity>
+              <Text style={styles.repText}>Reps: {reps}</Text>
+              <Text style={styles.exerciseText}>Exercise: {exercise}</Text> 
               {/* Camera Switch Button */}
               <TouchableOpacity style={styles.controlButton} onPress={toggleCameraFacing}>
                 <Ionicons name="camera-reverse-outline" size={24} color={COLORS.textDark} />
@@ -366,6 +377,18 @@ const styles = StyleSheet.create({
     color: COLORS.textDark,
     marginLeft: 8,
     fontWeight: '600',
+  },
+  repText: {
+    color: COLORS.textLight,
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 6,
+  },
+  exerciseText: {
+    color: COLORS.textLight,
+    fontSize: 18,
+    marginTop: 2,
+    fontStyle: 'italic',
   },
 });
 

@@ -41,14 +41,17 @@ GOOD_FORM_PHRASES = ["Perfect form!", "Great job!", "Looking good!", "Keep it up
 VISIBILITY_CUES = ["Keep body visible.", "Step back slightly.", "Center yourself."]
 STARTING_CUES = ["Get into starting pose.", "Ready?"]
 
+VISIBILITY_THRESHOLD = 0.6
+
+
 # MediaPipe setup
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.4, min_tracking_confidence=0.5)
 
-def get_landmark_coords(lm, landmark_enum):
+def get_landmark_coords(lm, landmark_enum, threshold=0.3):
     idx = landmark_enum.value
-    if idx < len(lm) and lm[idx].visibility > 0.4: # Check visibility
-         return [lm[idx].x, lm[idx].y]
+    if idx < len(lm) and lm[idx].visibility > threshold:
+        return [lm[idx].x, lm[idx].y]
     return None
 
 # --- Helpers ---
@@ -61,40 +64,59 @@ def calculate_angle(a, b, c):
 # Exercise analyzers
 def analyze_pushup(landmarks, state):
     feedback = ""
-    VISIBILITY_THRESHOLD = 0.6
     try:
-        # --- Get Landmarks Safely ---
+        # --- 1. Get Landmarks Safely ---
+        # Get coordinates for both sides. They will be None if not visible.
         left_shoulder = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_SHOULDER)
-        right_shoulder = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_SHOULDER)
         left_elbow = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_ELBOW)
-        right_elbow = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_ELBOW)
         left_wrist = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_WRIST)
-        right_wrist = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_WRIST)
         left_hip = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_HIP)
+        left_knee = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_KNEE)
+        
+        right_shoulder = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_SHOULDER)
+        right_elbow = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_ELBOW)
+        right_wrist = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_WRIST)
         right_hip = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_HIP)
-        left_knee = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_KNEE) # For back angle
         right_knee = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_KNEE)
 
-        # Check if essential landmarks are visible
-        if None in [left_shoulder, left_elbow, left_wrist, left_hip, left_knee,
-                    right_shoulder, right_elbow, right_wrist, right_hip, right_knee]:
-            return random.choice(VISIBILITY_CUES), state
-
-        # --- Calculate Angles ---
+        # --- 2. Calculate Angles (only if landmarks are visible) ---
         left_elbow_angle = calculate_angle(left_shoulder, left_elbow, left_wrist)
         right_elbow_angle = calculate_angle(right_shoulder, right_elbow, right_wrist)
-        elbow_angle = (left_elbow_angle + right_elbow_angle) / 2
-
         left_back_angle = calculate_angle(left_shoulder, left_hip, left_knee)
         right_back_angle = calculate_angle(right_shoulder, right_hip, right_knee)
-        back_angle = (left_back_angle + right_back_angle) / 2
 
-        # --- Priority 1: Form Correction ---
-        if back_angle < 155: # Check for bent back first
+        # --- 3. Select Valid Angles (Handles Side vs. Front View) ---
+        
+        # For elbow angle (rep counting):
+        # Use average if both arms are visible, otherwise use the one visible arm.
+        if left_elbow_angle != -1.0 and right_elbow_angle != -1.0:
+            elbow_angle = (left_elbow_angle + right_elbow_angle) / 2
+        elif left_elbow_angle != -1.0:
+            elbow_angle = left_elbow_angle
+        elif right_elbow_angle != -1.0:
+            elbow_angle = right_elbow_angle
+        else:
+            # If neither arm is visible, we can't do anything.
+            return random.choice(VISIBILITY_CUES) + " (Arms)", state
+
+        # For back angle (form check):
+        # Only use an angle if it's calculable.
+        if left_back_angle != -1.0 and right_back_angle != -1.0:
+            back_angle = (left_back_angle + right_back_angle) / 2
+        elif left_back_angle != -1.0:
+            back_angle = left_back_angle
+        elif right_back_angle != -1.0:
+            back_angle = right_back_angle
+        else:
+            back_angle = -1.0 # Flag as not calculable (e.g., front-on view)
+
+        # --- 4. Priority 1: Form Correction (Back Straightness) ---
+        # Only check the back angle if it was calculable (i.e., not a front-on view)
+        if back_angle != -1.0 and back_angle < 155:
             feedback = "Keep your back straight!"
-            return feedback, state # Return immediately if form is bad
+            return feedback, state
 
-        # --- Priority 2: Rep Counting & Stage Feedback ---
+        # --- 5. Priority 2: Rep Counting & Stage Feedback ---
         rep_counted_this_frame = False
         time_in_stage = time.time() - state["last_stage_time"]
 
@@ -108,85 +130,103 @@ def analyze_pushup(landmarks, state):
             if state['stage'] != 'down':
                 feedback = random.choice(PUSHUP_DOWN_CUES)
             state['stage'] = 'down'
-            state['last_stage_time'] = time.time() # Reset struggle timer only when reaching bottom
+            state['last_stage_time'] = time.time()
         else: # Mid-range
-            # Give specific cue only if no rep was counted this frame
             if not rep_counted_this_frame:
                 if state['stage'] == 'up': feedback = "Lower your chest."
                 else: feedback = random.choice(PUSHUP_UP_CUES)
 
         # --- Priority 3: Encouragement (if struggling) ---
-        # Only check if no other specific feedback was given
         if not feedback and time_in_stage > 4 and state["stage"] == 'down':
             feedback = random.choice(ENCOURAGEMENT_PHRASES)
 
         # --- Priority 4: General Good Form (if nothing else) ---
-        if not feedback:
-            # Occasionally give positive reinforcement
-            if random.random() < 0.1: # 10% chance per frame
-                 feedback = random.choice(GOOD_FORM_PHRASES)
-            # else: feedback = "Keep going." # Default if needed
+        if not feedback and random.random() < 0.1:
+            feedback = random.choice(GOOD_FORM_PHRASES)
 
     except Exception as e:
         # print(f"Pushup analysis error: {e}") # Uncomment for debugging
         feedback = random.choice(VISIBILITY_CUES)
 
-    # Ensure some feedback is always returned
     return (feedback if feedback else "Keep going."), state
-
 def analyze_bicep_curl(landmarks, state):
+    """
+    More robust bicep curl analyzer.
+    Expects state to include left_counter,left_stage,right_counter,right_stage.
+    """
     feedback = ""
     rep_counted_this_frame = False
     VISIBILITY_THRESHOLD = 0.6
-    try:
-        # --- Get Left Arm Landmarks & Angle ---
-        left_shoulder = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_SHOULDER)
-        left_elbow = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_ELBOW)
-        left_wrist = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_WRIST)
-        left_angle = -1.0
-        if None not in [left_shoulder, left_elbow, left_wrist]:
-            left_angle = calculate_angle(left_shoulder, left_elbow, left_wrist)
 
-        # --- Get Right Arm Landmarks & Angle ---
+    # Ensure state keys exist
+    state.setdefault('left_counter', 0)
+    state.setdefault('right_counter', 0)
+    state.setdefault('left_stage', 'down')
+    state.setdefault('right_stage', 'down')
+
+    # thresholds
+    DOWN_ANGLE = 160.0
+    UP_ANGLE = 40.0
+    HYSTERESIS_DOWN = 55.0  # if currently up, require angle > this to consider back to down
+
+    try:
+        # safe get coords (get_landmark_coords already checks visibility)
+        left_shoulder = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_SHOULDER)
+        left_elbow    = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_ELBOW)
+        left_wrist    = get_landmark_coords(landmarks, mp_pose.PoseLandmark.LEFT_WRIST)
+
         right_shoulder = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_SHOULDER)
-        right_elbow = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_ELBOW)
-        right_wrist = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_WRIST)
-        right_angle = -1.0
-        if None not in [right_shoulder, right_elbow, right_wrist]:
+        right_elbow    = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_ELBOW)
+        right_wrist    = get_landmark_coords(landmarks, mp_pose.PoseLandmark.RIGHT_WRIST)
+
+        left_angle = None
+        right_angle = None
+        if None not in (left_shoulder, left_elbow, left_wrist):
+            left_angle = calculate_angle(left_shoulder, left_elbow, left_wrist)
+        if None not in (right_shoulder, right_elbow, right_wrist):
             right_angle = calculate_angle(right_shoulder, right_elbow, right_wrist)
 
-        # --- Left Arm Rep Logic ---
-        if left_angle != -1.0:
-            if left_angle > 160: # Arm is down
+        # Left arm logic
+        if left_angle is not None:
+            # mark down when straight
+            if left_angle > DOWN_ANGLE:
                 state['left_stage'] = 'down'
-            elif left_angle < 40 and state['left_stage'] == 'down': # Arm is curled up
+            # count upward curl if previously down
+            elif left_angle < UP_ANGLE and state['left_stage'] == 'down':
                 state['left_counter'] += 1
                 state['left_stage'] = 'up'
-                feedback = f"Rep {state['left_counter'] + state['right_counter']}"
                 rep_counted_this_frame = True
+                feedback = f"Rep {state['left_counter'] + state['right_counter']}"
+            # if currently up but angle relaxed back beyond hysteresis, allow future rep
+            elif state['left_stage'] == 'up' and left_angle > HYSTERESIS_DOWN:
+                state['left_stage'] = 'down'
 
-        # --- Right Arm Rep Logic ---
-        if right_angle != -1.0:
-            if right_angle > 160: # Arm is down
+        # Right arm logic
+        if right_angle is not None:
+            if right_angle > DOWN_ANGLE:
                 state['right_stage'] = 'down'
-            elif right_angle < 40 and state['right_stage'] == 'down': # Arm is curled up
+            elif right_angle < UP_ANGLE and state['right_stage'] == 'down':
                 state['right_counter'] += 1
                 state['right_stage'] = 'up'
-                feedback = f"Rep {state['left_counter'] + state['right_counter']}"
                 rep_counted_this_frame = True
-        
-        # --- Corrective Feedback (if no rep was counted) ---
+                feedback = f"Rep {state['left_counter'] + state['right_counter']}"
+            elif state['right_stage'] == 'up' and right_angle > HYSTERESIS_DOWN:
+                state['right_stage'] = 'down'
+
+        # corrective feedback if nothing counted
         if not rep_counted_this_frame and not feedback:
-            if (state['left_stage'] == 'down' and 40 < left_angle < 150) or \
-               (state['right_stage'] == 'down' and 40 < right_angle < 150):
+            # only give cues if we have angles to reason with
+            if (state['left_stage'] == 'down' and left_angle is not None and 40 < left_angle < 150) or \
+               (state['right_stage'] == 'down' and right_angle is not None and 40 < right_angle < 150):
                 feedback = random.choice(BICEP_CURL_UP_CUES)
-            elif (state['left_stage'] == 'up' and left_angle > 50) or \
-                 (state['right_stage'] == 'up' and right_angle > 50):
+            elif (state['left_stage'] == 'up' and left_angle is not None and left_angle > 50) or \
+                 (state['right_stage'] == 'up' and right_angle is not None and right_angle > 50):
                 feedback = random.choice(BICEP_CURL_DOWN_CUES)
 
     except Exception as e:
+        # return visibility cue on unexpected errors (optionally log e)
         feedback = random.choice(VISIBILITY_CUES)
-    
+
     state['counter'] = state['left_counter'] + state['right_counter']
     return (feedback if feedback else "Keep curling."), state
 
@@ -309,7 +349,7 @@ def classify_pose(landmarks):
                      wrist_y = landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y # Use direct landmark for y comparison
                      hip_y = landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y
                      if arm_angle > 155 and wrist_y > hip_y:
-                         return "bicep curl"
+                         return "bicep_curl"
                  # Fallback: General Standing Pose = Squat
                  return "squat"
              else:
@@ -379,10 +419,20 @@ async def live_posture(ws: WebSocket):
                 if not state["current_workout"] or state["current_workout"] == "unknown":
                     detected_pose = classify_pose(lm)
                     if detected_pose:
+                        detected_pose = detected_pose.replace(" ", "_")
                         state["current_workout"] = detected_pose
-                        state["counter"] = 0 # Reset counter on new detection
-                        state["stage"] = ""  # Reset stage
+                        # Reset counters and stages for fresh session
+                        state.update({
+                            "counter": 0,
+                            "stage": "",
+                            "left_counter": 0,
+                            "right_counter": 0,
+                            "left_stage": "down",
+                            "right_stage": "down",
+                            "last_stage_time": time.time()
+                        })
                         feedback = f"Detected {detected_pose}. Let's begin."
+
                     else:
                         feedback = "Get into starting pose."
                         state["current_workout"] = "unknown" # Stay in detection mode

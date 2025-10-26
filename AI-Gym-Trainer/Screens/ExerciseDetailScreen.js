@@ -28,7 +28,8 @@ const ExerciseDetailScreen = ({ route, navigation }) => {
         <View style={styles.container}>
           {/* --- Action Buttons --- */}
           <View style={styles.buttonRow}>
-            <TouchableOpacity style={styles.startButton}>
+            <TouchableOpacity style={styles.startButton}
+            onPress={() => navigation.navigate('LiveCameraTab')}>
               <Text style={styles.startButtonText}>Start Exercise</Text>
             </TouchableOpacity>
           </View>

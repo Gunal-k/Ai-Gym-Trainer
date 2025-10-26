@@ -164,7 +164,7 @@ const WorkoutPlansScreen = ({ route }) => {
               <TouchableOpacity
                 style={styles.startButton}
                 // --- 8. Use correct variable 'generatedPlan.workout' ---
-                onPress={() => navigation.navigate('LiveCameraTab', { workoutPlan: generatedPlan.workout, setIsSessionActive: true })}
+                onPress={() => navigation.navigate('LiveCameraTab')}
               >
                 <Text style={styles.startButtonText}>Start Workout</Text>
               </TouchableOpacity>
