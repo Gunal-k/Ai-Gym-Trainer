@@ -19,7 +19,8 @@ import { COLORS } from '../constants/theme';
 import Markdown from 'react-native-markdown-display';
 
 // --- ADDED: Set your backend URL here ---
-const backendUrl = `http://${process.env.EXPO_PUBLIC_YOUR_COMPUTER_IP}:8001/chatbot`;
+const backendUrl = process.env.EXPO_PUBLIC_CHAT_SERVICE_URL;
+console.log(backendUrl)
 
 const ChatbotScreen = () => {
   // --- MODIFIED: Removed mock data, added loading state ---
